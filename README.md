@@ -1,31 +1,74 @@
-# Udemy Course Recommendation System | Machine Learning & AI Project
+# Udemy Course Recommendation System
 
-Welcome to the **Udemy Course Recommendation System** project! This project is a complete machine learning tutorial that will guide you through building a recommendation system to suggest Udemy courses based on user preferences and interactions. Using collaborative filtering and content-based filtering, this project will help you create a personalized experience for course recommendations.
+A machine learning-based course recommendation system built with Flutter, Python, and MongoDB.
 
-![Course Recommendation System Preview](https://github.com/pianalytix/Build-a-Udemy-Course-Recommendation-System-Machine-Learning-AI-Project/blob/main/Course%20Rec%20System%20ML%20Project.png?raw=true)
+## Features
 
-## Project Overview
+- **Course Discovery**: Browse trending and popular Udemy courses
+- **Personalized Recommendations**: Get course recommendations based on your interests
+- **Favorites**: Save courses to your favorites list for later viewing
+- **Search**: Find courses by title, subject, or keywords
 
-In this project, you will learn how to:
-- Preprocess and analyze user and course data to extract meaningful features.
-- Implement collaborative and content-based filtering to recommend relevant courses.
-- Combine filtering methods to enhance recommendation accuracy and user satisfaction.
+## Tech Stack
 
-This project includes:
-- **Data Processing** to prepare course and user data for analysis.
-- **Collaborative Filtering** using user interactions to recommend popular courses.
-- **Content-Based Filtering** to suggest courses based on specific attributes like topic, level, and rating.
-- **Hybrid Model** that combines collaborative and content-based methods for improved recommendations.
+### Frontend
+- Flutter for cross-platform mobile and web UI
+- BLoC pattern for state management
+- HTTP for API communication
 
-## Watch the Full Tutorial
-
-Follow the complete tutorial on YouTube to build this project from start to finish:
-
-[Watch on YouTube: Build a Udemy Course Recommendation System](https://youtu.be/fqSwRyUVl8c?si=38eyyilsPFLCgKM3)
-
+### Backend
+- Python Flask API
+- MongoDB for data storage
+- Machine learning recommendation algorithms
 
 ## Getting Started
 
-Clone or fork this repository to follow along with the tutorial. This project is ideal for anyone interested in machine learning, data science, and recommendation systems.
+### Prerequisites
+- Flutter SDK
+- Python 3.8+
+- MongoDB
 
-For any questions, feel free to open an issue in this repository. Enjoy building your recommendation system!
+### Installation
+
+1. Clone the repository
+```
+git clone https://github.com/your-username/Build-a-Udemy-Course-Recommendation-System-Machine-Learning-AI-Project.git
+```
+
+2. Set up the backend
+```
+cd server
+pip install -r requirements.txt
+python app.py
+```
+
+3. Run the Flutter app
+```
+cd study_notion
+flutter pub get
+flutter run
+```
+
+## Project Structure
+
+- `/server` - Python Flask backend with ML recommendation engine
+- `/study_notion` - Flutter frontend application
+- `/data` - Sample data and datasets
+
+## Screenshots
+
+[Coming soon]
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgements
+
+- Udemy for inspiration and dataset
+- Flutter and Dart teams for the awesome framework
+- MongoDB for the powerful database solution

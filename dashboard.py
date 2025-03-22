@@ -1,62 +1,94 @@
 import pandas as pd
+import numpy as np
+from typing import Dict, Union, Tuple
 
 
-def getvaluecounts(df):
-
-    return dict(df['subject'].value_counts())
-
-
-def getlevelcount(df):
-
-    return dict(list(df.groupby(['level'])['num_subscribers'].count().items())[1:])
-
-
-def getsubjectsperlevel(df):
-
-    ans = list(dict(df.groupby(['subject'])['level'].value_counts()).keys())
-    alllabels = [ans[i][0]+'_'+ans[i][1] for i in range(len(ans))]
-    ansvalues = list(dict(df.groupby(['subject'])[
-                     'level'].value_counts()).values())
-
-    completedict = dict(zip(alllabels, ansvalues))
-
-    return completedict
+def getvaluecounts(df: pd.DataFrame) -> Dict[str, int]:
+    """Get the distribution of courses by subject."""
+    try:
+        if 'subject' not in df.columns:
+            return {}
+        counts = df['subject'].value_counts().head(10)
+        return {str(k): int(v) for k, v in counts.items()}
+    except Exception as e:
+        print(f"Error in getvaluecounts: {e}")
+        return {}
 
 
-def yearwiseprofit(df):
+def getlevelcount(df: pd.DataFrame) -> Dict[str, int]:
+    """Get the distribution of courses by level."""
+    try:
+        if 'level' not in df.columns or 'num_subscribers' not in df.columns:
+            return {}
+        level_counts = df.groupby('level')['num_subscribers'].count()
+        # Remove 'All Levels' if it exists and get other levels
+        if 'All Levels' in level_counts.index:
+            level_counts = level_counts.drop('All Levels')
+        return {str(k): int(v) for k, v in level_counts.items()}
+    except Exception as e:
+        print(f"Error in getlevelcount: {e}")
+        return {}
 
-    df['price'] = df['price'].str.replace('TRUE|Free', '0')
-    df['price'] = df['price'].astype('float')
-    df['profit'] = df['price'] * df['num_subscribers']
 
-    # Converting the time column to year,month,day and many more
+def getsubjectsperlevel(df: pd.DataFrame) -> Dict[str, int]:
+    """Get the distribution of courses by subject and level."""
+    try:
+        if 'subject' not in df.columns or 'level' not in df.columns:
+            return {}
+        # Create a cross-tabulation of subjects and levels
+        subject_level_dist = pd.crosstab(df['subject'], df['level'])
+        # Convert to dictionary format
+        result = {}
+        for subject in subject_level_dist.index:
+            for level in subject_level_dist.columns:
+                key = f"{subject} - {level}"
+                value = subject_level_dist.loc[subject, level]
+                if value > 0:  # Only include non-zero values
+                    result[key] = int(value)
+        return result
+    except Exception as e:
+        print(f"Error in getsubjectsperlevel: {e}")
+        return {}
 
-    df['published_date'] = df['published_timestamp'].apply(
-        lambda x: x.split('T')[0])
 
-    # dropping of that index which has '3 hours' as time
+def yearwiseprofit(df: pd.DataFrame) -> Tuple[Dict[str, float], Dict[str, int], Dict[str, float], Dict[str, int]]:
+    """Calculate yearly and monthly profit and subscriber metrics."""
+    try:
+        if not all(col in df.columns for col in ['price', 'num_subscribers', 'published_timestamp']):
+            return {}, {}, {}, {}
+            
+        # Clean and convert price data
+        df['price'] = df['price'].replace({'FREE': '0', 'True': '0', 'Free': '0'}, regex=True)
+        df['price'] = pd.to_numeric(df['price'], errors='coerce').fillna(0)
+        df['profit'] = df['price'] * df['num_subscribers']
 
-    df = df.drop(df.index[2066])
+        # Convert timestamp to datetime
+        df['published_date'] = pd.to_datetime(df['published_timestamp'].str.split('T').str[0], 
+                                            format="%Y-%m-%d", 
+                                            errors='coerce')
+        
+        # Drop rows with invalid dates
+        df = df.dropna(subset=['published_date'])
 
-    # converting the published date to pandas datetime object
+        # Extract date components
+        df['Year'] = df['published_date'].dt.year
+        df['Month_name'] = df['published_date'].dt.strftime('%B')
 
-    df['published_date'] = pd.to_datetime(
-        df['published_date'], format="%Y-%m-%d")
+        # Calculate yearly metrics
+        yearly_profit = df.groupby('Year')['profit'].sum()
+        yearly_subscribers = df.groupby('Year')['num_subscribers'].sum()
 
-    df['Year'] = df['published_date'].dt.year
+        # Calculate monthly metrics
+        monthly_profit = df.groupby('Month_name')['profit'].sum()
+        monthly_subscribers = df.groupby('Month_name')['num_subscribers'].sum()
 
-    df['Month'] = df['published_date'].dt.month
+        # Convert to dictionaries with proper numeric types
+        profitmap = {str(k): float(v) for k, v in yearly_profit.items()}
+        subscribersmap = {str(k): int(v) for k, v in yearly_subscribers.items()}
+        profitmonthwise = {str(k): float(v) for k, v in monthly_profit.items()}
+        monthwisesub = {str(k): int(v) for k, v in monthly_subscribers.items()}
 
-    df['Day'] = df['published_date'].dt.day
-
-    df['Month_name'] = df['published_date'].dt.month_name()
-
-    profitmap = dict(df.groupby(['Year'])['profit'].sum())
-
-    subscribersmap = dict(df.groupby(['Year'])['num_subscribers'].sum())
-
-    profitmonthwise = dict(df.groupby(['Month_name'])['profit'].sum())
-
-    monthwisesub = dict(df.groupby(['Month_name'])['num_subscribers'].sum())
-
-    return profitmap, subscribersmap,profitmonthwise,monthwisesub
+        return profitmap, subscribersmap, profitmonthwise, monthwisesub
+    except Exception as e:
+        print(f"Error in yearwiseprofit: {e}")
+        return {}, {}, {}, {}
