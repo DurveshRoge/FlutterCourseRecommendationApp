@@ -36,40 +36,101 @@ class Course {
   });
 
   factory Course.fromJson(Map<String, dynamic> json) {
-    // Handle the case where isPaid might be a string "TRUE" instead of a boolean
-    bool convertIsPaid(dynamic value) {
-      if (value is bool) {
-        return value;
-      } else if (value is String) {
-        return value.toLowerCase() == 'true';
+    try {
+      print('Creating Course from JSON: ${json['course_title'] ?? json['title']}');
+      
+      // Handle the case where isPaid might be a string "TRUE" instead of a boolean
+      bool convertIsPaid(dynamic value) {
+        if (value is bool) {
+          return value;
+        } else if (value is String) {
+          return value.toLowerCase() == 'true';
+        }
+        return false;
       }
-      return false;
-    }
 
-    return Course(
-      id: json['course_id']?.toString() ?? json['id']?.toString() ?? '',
-      title: json['course_title'] ?? json['title'] ?? '',
-      url: json['url'] ?? '',
-      isPaid: convertIsPaid(json['is_paid']),
-      price: (json['price'] != null) ? double.tryParse(json['price'].toString()) ?? 0.0 : 0.0,
-      numSubscribers: json['num_subscribers'] is String 
-          ? int.tryParse(json['num_subscribers']) ?? 0 
-          : json['num_subscribers'] ?? 0,
-      numReviews: json['num_reviews'] is String 
-          ? int.tryParse(json['num_reviews']) ?? 0 
-          : json['num_reviews'] ?? 0,
-      numLectures: json['num_lectures'] is String 
-          ? int.tryParse(json['num_lectures']) ?? 0 
-          : json['num_lectures'] ?? 0,
-      level: json['level'] ?? 'All Levels',
-      contentDuration: json['content_duration'],
-      publishedTimestamp: json['published_timestamp'],
-      subject: json['subject'] ?? 'General',
-      cleanTitle: json['Clean_title'] ?? json['clean_title'],
-      imageUrl: json['image_url'],
-      userRating: json['user_rating']?.toDouble() ?? 0.0,
-      isFavorite: json['is_favorite'] ?? false,
-    );
+      // Safe parsing for numeric values
+      double parsePrice(dynamic value) {
+        if (value == null) return 0.0;
+        if (value is double) return value;
+        if (value is int) return value.toDouble();
+        if (value is String) {
+          try {
+            return double.parse(value);
+          } catch (e) {
+            return 0.0;
+          }
+        }
+        return 0.0;
+      }
+
+      int parseInteger(dynamic value) {
+        if (value == null) return 0;
+        if (value is int) return value;
+        if (value is String) {
+          try {
+            return int.parse(value);
+          } catch (e) {
+            return 0;
+          }
+        }
+        return 0;
+      }
+
+      // Get id from either course_id or id field
+      String courseId = '';
+      if (json.containsKey('course_id')) {
+        courseId = json['course_id']?.toString() ?? '';
+      } else if (json.containsKey('id')) {
+        courseId = json['id']?.toString() ?? '';
+      }
+
+      // Get title from either course_title or title field
+      String title = '';
+      if (json.containsKey('course_title')) {
+        title = json['course_title']?.toString() ?? '';
+      } else if (json.containsKey('title')) {
+        title = json['title']?.toString() ?? '';
+      }
+      
+      print('Processing course: ID=$courseId, Title=$title');
+
+      // Create the course object with safe values
+      return Course(
+        id: courseId,
+        title: title,
+        url: json['url']?.toString() ?? '',
+        isPaid: convertIsPaid(json['is_paid']),
+        price: parsePrice(json['price']),
+        numSubscribers: parseInteger(json['num_subscribers']),
+        numReviews: parseInteger(json['num_reviews']),
+        numLectures: parseInteger(json['num_lectures']),
+        level: json['level']?.toString() ?? 'All Levels',
+        contentDuration: json['content_duration']?.toString(),
+        publishedTimestamp: json['published_timestamp']?.toString(),
+        subject: json['subject']?.toString() ?? 'General',
+        cleanTitle: json['Clean_title']?.toString() ?? json['clean_title']?.toString(),
+        imageUrl: json['image_url']?.toString() ?? '',
+        userRating: parsePrice(json['user_rating']),
+        isFavorite: json['is_favorite'] == true,
+      );
+    } catch (e) {
+      print('Error creating Course from JSON: $e');
+      print('Problematic JSON: $json');
+      
+      // Return a minimal valid course object rather than throwing
+      return Course(
+        id: json['course_id']?.toString() ?? json['id']?.toString() ?? 'unknown',
+        title: json['course_title']?.toString() ?? json['title']?.toString() ?? 'Unknown Course',
+        url: json['url']?.toString() ?? '',
+        isPaid: false,
+        price: 0.0,
+        numSubscribers: 0,
+        numReviews: 0,
+        numLectures: 0,
+        subject: 'General',
+      );
+    }
   }
 
   Map<String, dynamic> toJson() {

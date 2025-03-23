@@ -2,8 +2,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:study_notion/models/course.dart';
 import 'package:study_notion/services/api_service.dart';
+import 'dart:math' show min;
 
-enum CourseType { trending, personalized, favorites, search }
+enum CourseType { trending, personalized, favorites, search, collaborative }
 
 // Events
 abstract class CourseEvent extends Equatable {
@@ -45,7 +46,14 @@ class ToggleFavorite extends CourseEvent {
 
 class LoadFavorites extends CourseEvent {}
 
-class LoadCollaborativeRecommendations extends CourseEvent {}
+class LoadCollaborativeRecommendations extends CourseEvent {
+  final String email;
+
+  LoadCollaborativeRecommendations({required this.email});
+
+  @override
+  List<Object> get props => [email];
+}
 
 class LoadTrendingCourses extends CourseEvent {}
 
@@ -54,6 +62,9 @@ class LoadPersonalizedRecommendations extends CourseEvent {}
 class LoadPersonalizedCourses extends CourseEvent {}
 
 class LoadFavoriteCourses extends CourseEvent {}
+
+// Add a new event for collaborative filtering
+class LoadCollaborativeFilteringRecommendations extends CourseEvent {}
 
 // States
 abstract class CourseState extends Equatable {
@@ -173,6 +184,33 @@ class FavoriteCoursesLoaded extends CourseState {
   List<Object> get props => [courses];
 }
 
+// Add new states for collaborative filtering
+class CollaborativeRecommendationsLoading extends CourseState {}
+
+class CollaborativeRecommendationsError extends CourseState {
+  final String message;
+
+  CollaborativeRecommendationsError(this.message);
+
+  @override
+  List<Object> get props => [message];
+}
+
+class CollaborativeRecommendationsLoaded extends CourseState {
+  final List<Course> recommendations;
+
+  CollaborativeRecommendationsLoaded(this.recommendations);
+
+  @override
+  List<Object> get props => [recommendations];
+  
+  // Add a helper method to get course info for debugging
+  String get courseInfo {
+    if (recommendations.isEmpty) return "No recommendations";
+    return recommendations.map((c) => "${c.title} (${c.id})").join(", ");
+  }
+}
+
 // BLoC
 class CourseBloc extends Bloc<CourseEvent, CourseState> {
   final ApiService _apiService;
@@ -183,9 +221,13 @@ class CourseBloc extends Bloc<CourseEvent, CourseState> {
   // For throttling API calls
   static DateTime _lastFavoriteLoad = DateTime.fromMillisecondsSinceEpoch(0);
   
+  // Add a class property to track UI state
+  bool _isCollaborativeRecommendationsLoading = false;
+  
   CourseBloc(this._apiService) : super(CourseInitial()) {
     on<LoadTrendingCourses>(_onLoadTrendingCourses);
     on<LoadCollaborativeRecommendations>(_onLoadCollaborativeRecommendations);
+    on<LoadCollaborativeFilteringRecommendations>(_onLoadCollaborativeFilteringRecommendations);
     on<LoadPersonalizedRecommendations>(_onLoadPersonalizedRecommendations);
     on<LoadFavorites>(_onLoadFavorites);
     on<SearchCourses>(_onSearchCourses);
@@ -480,13 +522,41 @@ class CourseBloc extends Bloc<CourseEvent, CourseState> {
     LoadCollaborativeRecommendations event,
     Emitter<CourseState> emit,
   ) async {
-    emit(CourseLoading());
     try {
-      final recommendations = await _apiService.getRecommendedCourses();
-      _lastLoadedCourses = recommendations;
-      emit(CourseLoaded(recommendations, CourseType.trending));
+      // Only proceed if not already in loaded state
+      if (state is CollaborativeRecommendationsLoaded) {
+        return;
+      }
+      
+      emit(CollaborativeRecommendationsLoading());
+      
+      print('Getting collaborative recommendations for ${event.email}');
+      final recommendations = await _apiService.getCollaborativeFilteringRecommendations();
+      
+      if (recommendations.isEmpty) {
+        // If no collaborative recommendations, fall back to personalized
+        print('No collaborative recommendations found, falling back to personalized');
+        final personalizedCourses = await _apiService.getRecommendedCourses();
+        emit(CollaborativeRecommendationsLoaded(personalizedCourses));
+      } else {
+        print('Loaded ${recommendations.length} collaborative recommendations');
+        // Cache the results
+        _courseCache['collaborative'] = recommendations;
+        // Emit loaded state
+        emit(CollaborativeRecommendationsLoaded(recommendations));
+      }
     } catch (e) {
-      emit(CourseError('Failed to load recommendations: $e'));
+      print('Error loading collaborative recommendations: $e');
+      emit(CollaborativeRecommendationsError('Failed to load recommendations: $e'));
+      
+      // Try to fall back to personalized recommendations
+      try {
+        final personalizedCourses = await _apiService.getRecommendedCourses();
+        emit(CollaborativeRecommendationsLoaded(personalizedCourses));
+      } catch (_) {
+        // Already in error state, just log this second error
+        print('Error loading fallback recommendations: $_');
+      }
     }
   }
 
@@ -494,12 +564,26 @@ class CourseBloc extends Bloc<CourseEvent, CourseState> {
     LoadTrendingCourses event,
     Emitter<CourseState> emit,
   ) async {
-    // If we already have courses loaded, keep them
-    if (state is CourseLoaded) {
-      return;
+    // Show loading state
+    emit(TrendingCoursesLoading());
+    
+    try {
+      // Load trending courses from API
+      print('Loading trending courses...');
+      final courses = await _apiService.getTrendingCourses();
+      
+      // Cache the trending courses
+      _courseCache[_getCacheKey(CourseType.trending)] = courses;
+      
+      // Emit loaded state with trending courses
+      emit(TrendingCoursesLoaded(courses));
+      
+      // Also update the CourseLoaded state for compatibility
+      emit(CourseLoaded(courses, CourseType.trending));
+    } catch (e) {
+      print('Error loading trending courses: $e');
+      emit(TrendingCoursesError('Failed to load trending courses: $e'));
     }
-    // Otherwise, show initial state
-    emit(CourseInitial());
   }
 
   Future<void> _onLoadPersonalizedRecommendations(
@@ -545,6 +629,78 @@ class CourseBloc extends Bloc<CourseEvent, CourseState> {
       emit(FavoriteCoursesLoaded(markedFavorites));
     } catch (e) {
       emit(FavoriteCoursesError('Failed to load favorite courses: ${e.toString()}'));
+    }
+  }
+
+  Future<void> _onLoadCollaborativeFilteringRecommendations(
+    LoadCollaborativeFilteringRecommendations event,
+    Emitter<CourseState> emit,
+  ) async {
+    try {
+      // Set loading flag
+      _isCollaborativeRecommendationsLoading = true;
+      
+      // Always show loading state first
+      emit(CollaborativeRecommendationsLoading());
+      print('====== Emitted CollaborativeRecommendationsLoading state ======');
+      
+      // Make API call - force a new request
+      print('====== Calling API service for collaborative recommendations ======');
+      final recommendations = await _apiService.getCollaborativeFilteringRecommendations();
+      
+      print('====== Received ${recommendations.length} collaborative filtering recommendations ======');
+      
+      // Debug the first few recommendations
+      if (recommendations.isNotEmpty) {
+        print('====== First few collaborative filtering recommendations: ======');
+        for (int i = 0; i < min(3, recommendations.length); i++) {
+          print('Course ${i+1}: ${recommendations[i].title} (ID: ${recommendations[i].id})');
+          print('Type: ${recommendations[i].runtimeType}');
+          print('Hash: ${recommendations[i].hashCode}');
+          print('Subject: ${recommendations[i].subject}');
+          if (recommendations[i].imageUrl == null || recommendations[i].imageUrl!.isEmpty) {
+            print('Course ${i+1} has no image URL');
+          }
+        }
+        
+        // DOUBLE CHECK that recommendations is not empty
+        if (recommendations.length == 0) {
+          print('====== WARNING: recommendations length is zero despite isNotEmpty test ======');
+        }
+        
+        // Cache the results
+        _courseCache['collaborative'] = recommendations;
+        
+        // Emit loaded state with recommendations
+        print('====== Emitting CollaborativeRecommendationsLoaded with ${recommendations.length} recommendations ======');
+        final loadedState = CollaborativeRecommendationsLoaded(recommendations);
+        print('====== Created state: ${loadedState.runtimeType} with ${loadedState.recommendations.length} recommendations ======');
+        print('====== Sample courses in state: ${loadedState.courseInfo} ======');
+        emit(loadedState);
+        print('====== Emitted state successfully ======');
+        return;
+      }
+      
+      // If recommendations list is empty, fall back to trending
+      print('====== No collaborative filtering recommendations found, falling back to trending ======');
+      try {
+        final trendingCourses = await _apiService.getTrendingCourses();
+        print('====== Received ${trendingCourses.length} trending courses as fallback ======');
+        
+        // Cache the results
+        _courseCache['collaborative'] = trendingCourses;
+        
+        // Emit loaded state with trending courses
+        emit(CollaborativeRecommendationsLoaded(trendingCourses));
+      } catch (e) {
+        print('====== Error loading trending courses fallback: $e ======');
+        emit(CollaborativeRecommendationsError('No recommendations available. Please try again later.'));
+      }
+    } catch (e) {
+      print('====== Error loading collaborative filtering recommendations: $e ======');
+      emit(CollaborativeRecommendationsError('Failed to load recommendations: $e'));
+    } finally {
+      _isCollaborativeRecommendationsLoading = false;
     }
   }
 
@@ -599,6 +755,8 @@ class CourseBloc extends Bloc<CourseEvent, CourseState> {
         return 'favorites';
       case CourseType.search:
         return 'search';
+      case CourseType.collaborative:
+        return 'collaborative';
       default:
         return 'unknown';
     }

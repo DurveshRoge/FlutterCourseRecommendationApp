@@ -27,6 +27,7 @@ class ApiService {
   late Dio _dio;
   User? _currentUser;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  String? _sessionCookie;
   
   // Current logged in user
   User? get currentUser => _currentUser;
@@ -53,6 +54,26 @@ class ApiService {
     _dio.interceptors.add(LogInterceptor(
       requestBody: true,
       responseBody: true,
+    ));
+    
+    // Add cookie handling interceptor
+    _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) {
+        if (_sessionCookie != null) {
+          options.headers['Cookie'] = _sessionCookie;
+          print('Adding session cookie to request: $_sessionCookie');
+        }
+        return handler.next(options);
+      },
+      onResponse: (response, handler) {
+        // Extract and save the cookie from the response
+        var setCookie = response.headers['set-cookie'];
+        if (setCookie != null && setCookie.isNotEmpty) {
+          _sessionCookie = setCookie.first;
+          print('Saved session cookie: $_sessionCookie');
+        }
+        return handler.next(response);
+      },
     ));
     
     print('Using API endpoint: ${baseUrl}/');
@@ -185,11 +206,22 @@ class ApiService {
           validateStatus: (status) {
             return status! < 500; // Accept all status codes less than 500
           },
+          // Important: Allow cookies to be received and sent
+          receiveTimeout: const Duration(seconds: 30),
+          followRedirects: false,
         ),
       );
 
       print('Login response status: ${response.statusCode}');
+      print('Login response headers: ${response.headers}');
       print('Login response data: ${response.data}');
+      
+      // Store the cookies if they exist
+      var setCookie = response.headers['set-cookie'];
+      if (setCookie != null && setCookie.isNotEmpty) {
+        _sessionCookie = setCookie.first;
+        print('Stored session cookie: $_sessionCookie');
+      }
       
       if (response.statusCode == 200 && response.data['success'] == true) {
         _currentUser = User.fromJson(response.data['user']);
@@ -254,10 +286,23 @@ class ApiService {
   // Modified getCurrentUser to also refresh preferences
   Future<User?> getCurrentUser() async {
     try {
-      // No need to initialize Dio again, it's already initialized in constructor
-      final response = await _dio.get('${baseUrl}/user');
+      print('Getting current user from API');
+      print('Session cookie available: ${_sessionCookie != null}');
+      
+      final response = await _dio.get(
+        '${baseUrl}/user',
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            if (_sessionCookie != null) 'Cookie': _sessionCookie!,
+          },
+          validateStatus: (status) => status! < 500,
+          followRedirects: false,
+        ),
+      );
       
       print('Get current user response: ${response.statusCode}');
+      print('Get current user headers: ${response.headers}');
       
       if (response.statusCode == 200 && response.data['success'] == true) {
         final userData = response.data['user'];
@@ -281,11 +326,35 @@ class ApiService {
         print('- Duration: ${user.preferredDuration}');
         
         return user;
+      } else if (response.statusCode == 401) {
+        // Handle unauthorized error gracefully
+        print('User not logged in (401 Unauthorized)');
+        _sessionCookie = null; // Clear the invalid cookie
+        return null;
       }
       
+      print('Get current user returned unexpected status: ${response.statusCode}');
       return null;
     } catch (e) {
       print('Error getting current user: $e');
+      
+      // For development purposes: Create a test user if unauthorized
+      if (kIsWeb) {
+        print('Creating test user for development');
+        final testUser = User(
+          id: 'test_id',
+          name: 'Test User',
+          email: 'test2@gmail.com',
+          preferredTopics: ['Web Development', 'Graphic Design'],
+          skillLevel: 'Beginner Level',
+          courseType: 'All',
+          preferredDuration: 'Any',
+          popularityImportance: 'Medium',
+        );
+        _currentUser = testUser;
+        return testUser;
+      }
+      
       return null;
     }
   }
@@ -302,6 +371,8 @@ class ApiService {
       
       if (response.statusCode == 200 && response.data['success'] == true) {
         _currentUser = null;
+        _sessionCookie = null; // Clear the cookie
+        print('User logged out, session cookie cleared');
         return true;
       } else {
         throw Exception(response.data['message'] ?? 'Logout failed');
@@ -310,6 +381,8 @@ class ApiService {
       print('Logout error: $e');
       // For development, simulate success
       _currentUser = null;
+      _sessionCookie = null; // Clear the cookie
+      print('User logged out due to error, session cookie cleared');
       return true;
     }
   }
@@ -741,6 +814,87 @@ class ApiService {
     } catch (e) {
       print('Error getting trending courses: $e');
       return [];
+    }
+  }
+
+  // Get collaborative filtering recommendations based on user interactions
+  Future<List<Course>> getCollaborativeFilteringRecommendations({int limit = 10}) async {
+    try {
+      if (_currentUser == null) {
+        print('User not logged in, returning empty recommendations');
+        return [];
+      }
+
+      print('Fetching collaborative filtering recommendations for user: ${_currentUser!.email}');
+      
+      final response = await _dio.get(
+        '$baseUrl/recommendations/collaborative',
+        queryParameters: {
+          'email': _currentUser!.email,
+          'limit': limit.toString(),
+        },
+      );
+      
+      print('Collaborative filtering API response status: ${response.statusCode}');
+      print('Collaborative filtering response data keys: ${response.data.keys.toList()}');
+      print('FULL RESPONSE DATA: ${response.data}');
+      
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = response.data;
+        
+        // Check for success flag
+        if (responseData['success'] == true) {
+          final List<dynamic> coursesJson = responseData['courses'] ?? [];
+          print('Found ${coursesJson.length} collaborative filtering recommendations');
+          
+          if (coursesJson.isEmpty) {
+            print('No courses returned from collaborative filtering API');
+            
+            // Try getting personalized recommendations instead
+            print('Falling back to personalized recommendations');
+            return await getRecommendedCourses(limit: limit);
+          }
+          
+          try {
+            final courses = coursesJson.map((json) => Course.fromJson(json)).toList();
+            print('Successfully converted ${courses.length} recommendations to Course objects');
+            if (courses.isNotEmpty) {
+              print('First course: ${courses[0].title} (${courses[0].id})');
+            }
+            return courses;
+          } catch (e) {
+            print('Error converting courses: $e');
+            // Try to convert one by one to identify problematic courses
+            List<Course> validCourses = [];
+            for (var courseJson in coursesJson) {
+              try {
+                final course = Course.fromJson(courseJson);
+                validCourses.add(course);
+              } catch (e) {
+                print('Error processing course: $e');
+                print('Problematic JSON: $courseJson');
+              }
+            }
+            return validCourses;
+          }
+        } else {
+          print('API returned unsuccessful response: ${responseData['message'] ?? 'Unknown error'}');
+          
+          // Fallback to personalized recommendations
+          return await getRecommendedCourses(limit: limit);
+        }
+      } else {
+        print('Failed to get collaborative filtering recommendations: ${response.statusCode}');
+        print('Error message: ${response.data['message'] ?? 'Unknown error'}');
+        
+        // Fallback to personalized recommendations
+        return await getRecommendedCourses(limit: limit);
+      }
+    } catch (e) {
+      print('Error getting collaborative filtering recommendations: $e');
+      
+      // Fallback to personalized recommendations
+      return await getRecommendedCourses(limit: limit);
     }
   }
 } 

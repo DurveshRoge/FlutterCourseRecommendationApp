@@ -1,5 +1,5 @@
 from os import read
-import os  # Add this import for os.urandom
+import os  # Import for environment variables and os.urandom
 from flask import Flask, request, render_template, jsonify, session
 from flask_pymongo import PyMongo
 from flask_bcrypt import Bcrypt
@@ -27,13 +27,18 @@ CORS(app, resources={
     }
 })
 
-app.config["MONGO_URI"] = "mongodb+srv://Durveshroge:durvesh123@cluster0.kxdlj.mongodb.net/Udemydatabase?retryWrites=true&w=majority&appName=Cluster0"
-app.secret_key = os.urandom(24)  # For session management
-app.permanent_session_lifetime = timedelta(days=7)  # Session lasts for 7 days
-app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# MongoDB Configuration
+# Use environment variable or fallback to default
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://Durveshroge:durvesh123@cluster0.kxdlj.mongodb.net/Udemydatabase?retryWrites=true&w=majority&appName=Cluster0")
+app.config["MONGO_URI"] = MONGO_URI
+
+# Session Configuration
+app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24))
+app.permanent_session_lifetime = timedelta(days=7)
+app.config['SESSION_TYPE'] = os.environ.get("SESSION_TYPE", "filesystem")
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get("SESSION_COOKIE_SECURE", "False").lower() == "true"
+app.config['SESSION_COOKIE_HTTPONLY'] = os.environ.get("SESSION_COOKIE_HTTPONLY", "True").lower() == "true"
+app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
 mongo = PyMongo(app)
 bcrypt = Bcrypt(app)
 

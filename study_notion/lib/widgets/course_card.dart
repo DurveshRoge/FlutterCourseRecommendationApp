@@ -113,17 +113,86 @@ class _CourseCardState extends State<CourseCard> {
                 aspectRatio: 16 / 9,
                 child: Stack(
                   children: [
-                    // Course image or placeholder (gray background with school icon)
+                    // Course image or placeholder (colored background with subject-based color)
                     Container(
                       width: double.infinity,
-                      color: Colors.grey[300],
-                      child: Center(
-                        child: Icon(
-                          Icons.school,
-                          size: 48,
-                          color: Colors.grey[600],
-                        ),
-                      ),
+                      color: _getSubjectColor(widget.course.subject ?? 'General'),
+                      child: widget.course.imageUrl != null && widget.course.imageUrl!.isNotEmpty
+                          ? CachedNetworkImage(
+                              imageUrl: widget.course.imageUrl!,
+                              fit: BoxFit.cover,
+                              placeholder: (context, url) => Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.school,
+                                      size: 48,
+                                      color: Colors.white,
+                                    ),
+                                    SizedBox(height: 8),
+                                    if (widget.course.subject != null && widget.course.subject!.isNotEmpty)
+                                      Text(
+                                        widget.course.subject!,
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              errorWidget: (context, url, error) => Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.school,
+                                      size: 48,
+                                      color: Colors.white,
+                                    ),
+                                    SizedBox(height: 8),
+                                    if (widget.course.subject != null && widget.course.subject!.isNotEmpty)
+                                      Text(
+                                        widget.course.subject!,
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.school,
+                                    size: 48,
+                                    color: Colors.white,
+                                  ),
+                                  SizedBox(height: 8),
+                                  if (widget.course.subject != null && widget.course.subject!.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                      child: Text(
+                                        widget.course.subject!,
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
                     ),
                     
                     // Level badge at bottom with favorite icon
@@ -138,7 +207,7 @@ class _CourseCardState extends State<CourseCard> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Alls',
+                              widget.course.level ?? 'All Levels',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.white,
@@ -309,5 +378,49 @@ class _CourseCardState extends State<CourseCard> {
     } catch (e) {
       debugPrint('Error launching URL: $e');
     }
+  }
+
+  Color _getSubjectColor(String subject) {
+    // Implement your logic to determine a color based on the subject
+    // For example, you can use a switch statement or a map to associate subjects with colors
+    final lowerSubject = subject.toLowerCase().trim();
+    
+    if (lowerSubject.contains('web development')) {
+      return Colors.teal;
+    } else if (lowerSubject.contains('mobile development')) {
+      return Colors.purple;
+    } else if (lowerSubject.contains('data science')) {
+      return Colors.orange;
+    } else if (lowerSubject.contains('business')) {
+      return Colors.blue;
+    } else if (lowerSubject.contains('finance')) {
+      return Colors.green;
+    } else if (lowerSubject.contains('design') || lowerSubject.contains('graphic')) {
+      return Colors.pink;
+    } else if (lowerSubject.contains('photography')) {
+      return Colors.brown;
+    } else if (lowerSubject.contains('music')) {
+      return Colors.indigo;
+    } else if (lowerSubject.contains('marketing')) {
+      return Colors.red;
+    } else if (lowerSubject.contains('programming') || lowerSubject.contains('python')) {
+      return Colors.blueGrey;
+    } else if (lowerSubject.contains('machine learning') || lowerSubject.contains('ai')) {
+      return Colors.deepPurple;
+    } else if (lowerSubject.contains('health')) {
+      return Colors.lightGreen;
+    } else if (lowerSubject.contains('language')) {
+      return Colors.amber;
+    } else if (lowerSubject.contains('art')) {
+      return Colors.deepOrange;
+    }
+    
+    // Generate a color based on the first letter of the subject if no match
+    if (subject.isNotEmpty) {
+      final int asciiValue = subject.codeUnitAt(0);
+      return Colors.primaries[asciiValue % Colors.primaries.length];
+    }
+    
+    return Colors.grey;
   }
 } 

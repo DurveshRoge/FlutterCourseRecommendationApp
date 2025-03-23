@@ -19,6 +19,7 @@ import 'package:study_notion/services/api_service.dart';
 
 // Import theme provider
 import 'package:study_notion/providers/theme_provider.dart';
+import 'package:study_notion/providers/user_provider.dart';
 
 void main() {
   runApp(const AppWithProviders());
@@ -38,6 +39,8 @@ class AppWithProviders extends StatelessWidget {
         BlocProvider(create: (context) => AuthBloc(apiService: apiService)),
         // Add ThemeProvider
         ChangeNotifierProvider(create: (context) => ThemeProvider()),
+        // Add UserProvider
+        ChangeNotifierProvider(create: (context) => UserProvider(apiService)),
       ],
       child: const MyApp(),
     );

@@ -3,6 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/course_bloc.dart';
 import '../widgets/course_card.dart';
 import '../models/course.dart';
+import 'package:provider/provider.dart';
+import '../providers/user_provider.dart';
+import 'dart:math' show min;
 
 class MainScreen extends StatefulWidget {
   @override
@@ -15,18 +18,15 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
-        // Simple tab changed handler
-        if (_tabController.index == 3) { // Favorites tab
-          context.read<CourseBloc>().add(LoadFavorites());
-        }
+        _handleTabChange();
       }
     });
     
-    // Initial loading of data
-    context.read<CourseBloc>().add(LoadTrendingCourses());
+    // Initial loading of data for tabs other than Discover
+    print('MainScreen: Loading initial data');
   }
 
   // Flag to prevent multiple LoadFavorites calls
@@ -38,23 +38,20 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     // Depending on the current tab, load appropriate data
     switch (_tabController.index) {
       case 0: // Discover
-        context.read<CourseBloc>().add(LoadTrendingCourses());
+        // Don't automatically load trending courses
         break;
-      case 1: // For You
-        context.read<CourseBloc>().add(LoadPersonalizedRecommendations());
-        break;
-      case 2: // Personalized
+      case 1: // Personalized
         context.read<CourseBloc>().add(LoadPersonalizedCourses());
         break;
-      case 3: // Favorites
+      case 2: // Favorites
         // Only load favorites if not already loading or loaded
         if (!_isLoadingFavorites) {
           _isLoadingFavorites = true;
           print('Loading favorites from tab change');
           context.read<CourseBloc>().add(LoadFavorites());
           
-          // Reset flag after delay
-          Future.delayed(Duration(seconds: 2), () {
+          // Reset the flag after some time
+          Future.delayed(const Duration(seconds: 5), () {
             _isLoadingFavorites = false;
           });
         }
@@ -68,6 +65,20 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
       appBar: AppBar(
         title: Text('StudyNotion'),
         actions: [
+          // Debug button
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            onPressed: () {
+              print('DEBUG: Manually triggering recommendation reload');
+              context.read<CourseBloc>().add(LoadPersonalizedCourses());
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Reloading recommendations...'))
+              );
+            },
+            child: Text('Reload'),
+          ),
           IconButton(
             icon: Icon(Icons.grid_view),
             onPressed: () {},
@@ -81,7 +92,6 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
           controller: _tabController,
           tabs: [
             Tab(text: 'Discover'),
-            Tab(text: 'For You'),
             Tab(text: 'Personal'),
             Tab(text: 'Favorites'),
           ],
@@ -91,7 +101,6 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
         controller: _tabController,
         children: [
           _buildDiscoverTabWithBloc(),
-          _buildForYouTabWithBloc(),
           _buildPersonalTabWithBloc(),
           _buildFavoritesTabWithBloc(),
         ],
@@ -102,15 +111,43 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
   Widget _buildDiscoverTabWithBloc() {
     return BlocBuilder<CourseBloc, CourseState>(
       builder: (context, state) {
-        return _buildDiscoverTab(state);
-      },
-    );
-  }
-  
-  Widget _buildForYouTabWithBloc() {
-    return BlocBuilder<CourseBloc, CourseState>(
-      builder: (context, state) {
-        return _buildForYouTab(state);
+        return Column(
+          children: [
+            // Search Bar
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: TextField(
+                decoration: InputDecoration(
+                  hintText: 'Search courses...',
+                  prefixIcon: Icon(Icons.search, color: Colors.teal),
+                  suffixIcon: IconButton(
+                    icon: Icon(Icons.clear),
+                    onPressed: () {
+                      // Clear search results
+                      context.read<CourseBloc>().add(SearchCourses(""));
+                    },
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey[200],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                onSubmitted: (query) {
+                  if (query.isNotEmpty) {
+                    context.read<CourseBloc>().add(SearchCourses(query));
+                  }
+                },
+              ),
+            ),
+            // Tab Content
+            Expanded(
+              child: _buildDiscoverTab(state),
+            ),
+          ],
+        );
       },
     );
   }
@@ -181,10 +218,6 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildDiscoverTab(CourseState state) {
-    return Center(child: Text('Search for courses'));
-  }
-
-  Widget _buildForYouTab(CourseState state) {
     if (state is CourseLoading) {
       return Center(child: CircularProgressIndicator());
     } else if (state is CourseError) {
@@ -196,17 +229,42 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
             SizedBox(height: 16),
             ElevatedButton(
               onPressed: () {
-                context.read<CourseBloc>().add(LoadTrendingCourses());
+                // Clear state instead of loading trending courses
+                context.read<CourseBloc>().add(SearchCourses(""));
               },
               child: Text('Try Again'),
             ),
           ],
         ),
       );
-    } else if (state is CourseLoaded) {
-      return _buildCourseGrid(state.courses);
+    } else if (state is CourseLoaded && state.type == CourseType.search && state.courses.isNotEmpty) {
+      // Only show courses if they're search results
+      return _buildCourseGrid(state.courses, messageType: 'search results');
+    } else {
+      // Default state - prompt user to search
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search, size: 80, color: Colors.grey[400]),
+            SizedBox(height: 16),
+            Text(
+              'Search for Courses',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 8),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                'Enter a search term above to find courses',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ),
+          ],
+        ),
+      );
     }
-    return Center(child: Text('No trending courses available'));
   }
 
   Widget _buildPersonalTab(CourseState state) {
@@ -229,13 +287,16 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
         ),
       );
     } else if (state is CourseLoaded) {
-      return _buildCourseGrid(state.courses);
+      return _buildCourseGrid(state.courses, messageType: 'personalized courses');
     }
     return Center(child: Text('No personalized recommendations available'));
   }
 
-  Widget _buildCourseGrid(List<Course> courses) {
+  Widget _buildCourseGrid(List<Course> courses, {String messageType = 'courses'}) {
+    print('***** _buildCourseGrid called with ${courses.length} $messageType *****');
+    
     if (courses.isEmpty) {
+      print('***** _buildCourseGrid: Empty courses list, showing empty message *****');
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -243,7 +304,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
             Icon(Icons.school_outlined, size: 64, color: Colors.grey[400]),
             SizedBox(height: 16),
             Text(
-              'No courses available',
+              'No $messageType available',
               style: TextStyle(
                 fontSize: 18,
                 color: Colors.grey[600],
@@ -255,59 +316,31 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
       );
     }
 
-    return Column(
-      children: [
-        // Search bar
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Container(
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Row(
-              children: [
-                SizedBox(width: 16),
-                Icon(Icons.search, color: Colors.grey[600]),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Search courses...',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.close, color: Colors.grey[600]),
-                  onPressed: () {},
-                ),
-              ],
-            ),
-          ),
-        ),
-        
-        // Grid of courses
-        Expanded(
-          child: GridView.builder(
-            padding: EdgeInsets.all(16),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.7,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-            ),
-            itemCount: courses.length,
-            itemBuilder: (context, index) {
-              final course = courses[index];
-              print('Building course card for: ${course.title} (${course.id})');
-              return CourseCard(course: course);
-            },
-          ),
-        ),
-      ],
+    print('***** _buildCourseGrid: Building grid with ${courses.length} courses *****');
+    
+    // Debug the first few courses
+    for (int i = 0; i < min(2, courses.length); i++) {
+      final course = courses[i];
+      print('Course $i: ${course.title} (ID: ${course.id})');
+      print('  Subject: ${course.subject}');
+      print('  Image URL: ${course.imageUrl}');
+    }
+
+    // Grid of courses without search bar
+    return GridView.builder(
+      padding: EdgeInsets.all(16),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.7,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+      ),
+      itemCount: courses.length,
+      itemBuilder: (context, index) {
+        final course = courses[index];
+        print('Building course card for: ${course.title} (${course.id}) at index $index');
+        return CourseCard(course: course);
+      },
     );
   }
 

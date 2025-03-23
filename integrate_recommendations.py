@@ -7,15 +7,152 @@ using user interaction data directly from CSV.
 import pandas as pd
 import numpy as np
 from flask import jsonify, request
+import pickle
+import os
+from collections import defaultdict
 
-def get_course_recommendations(user_id, limit=10, mongo=None):
+# Check if models exist
+SVD_MODEL_PATH = 'svd_model.pkl'
+KNN_MODEL_PATH = 'knn_model.pkl'
+COURSE_MAPPING_PATH = 'course_mapping.pkl'
+
+def get_collaborative_filtering_recommendations(email, limit=10, max_per_subject=3):
+    """
+    Get recommendations for a user using the collaborative filtering model.
+    
+    Args:
+        email: User's email address
+        limit: Maximum number of recommendations to return
+        max_per_subject: Maximum number of courses per subject for diversity
+        
+    Returns:
+        List of course recommendations with scores
+    """
+    try:
+        # Load models if they exist
+        if not os.path.exists(SVD_MODEL_PATH) or not os.path.exists(COURSE_MAPPING_PATH):
+            print("Collaborative filtering models not found. Please run train_collaborative_filtering.py")
+            return []
+            
+        # Load the SVD model and course mapping
+        with open(SVD_MODEL_PATH, 'rb') as f:
+            svd_model = pickle.load(f)
+            
+        with open(COURSE_MAPPING_PATH, 'rb') as f:
+            course_to_idx = pickle.load(f)
+            
+        # Load interactions and course data
+        interactions_df = pd.read_csv('user_interactions.csv')
+        courses_df = pd.read_csv('UdemyCleanedTitle.csv')
+        
+        # Convert email to user_id format
+        # Extract username from email (e.g., "user123@example.com" -> "user_123")
+        if '@' in email:
+            username = email.split('@')[0]
+            if username.startswith('test'):
+                user_id = f"user_{username.replace('test', '')}"
+            else:
+                # Try to find a matching user_id in interactions
+                matching_users = interactions_df[interactions_df['user_id'].str.contains(username)]
+                if not matching_users.empty:
+                    user_id = matching_users['user_id'].iloc[0]
+                else:
+                    user_id = f"user_{username}"
+        else:
+            # If not an email, assume it's already a user_id
+            user_id = email
+            
+        print(f"Using user_id: {user_id} for collaborative filtering")
+        
+        # Check if this user has interactions
+        user_interactions = interactions_df[interactions_df['user_id'] == user_id]
+        
+        if user_interactions.empty:
+            print(f"No interactions found for user {user_id}. Falling back to trending courses with diversity.")
+            # Return trending courses with diversity instead of just popular courses
+            trending_recs = get_trending_recommendations(limit=limit*3)  # Get more to allow for diversification
+            return diversify_recommendations(trending_recs, courses_df, max_per_subject)
+            
+        # Get courses the user has already interacted with
+        user_courses = user_interactions['course_id'].tolist()
+        print(f"User has interacted with {len(user_courses)} courses")
+        
+        # Get the subjects of courses the user has interacted with
+        user_subjects = []
+        for course_id in user_courses:
+            course_data = courses_df[courses_df['course_id'] == course_id]
+            if not course_data.empty:
+                subject = course_data.iloc[0]['subject']
+                if subject not in user_subjects:
+                    user_subjects.append(subject)
+        
+        print(f"User has interacted with courses from {len(user_subjects)} subjects: {user_subjects}")
+        
+        # Get all courses
+        all_courses = list(course_to_idx.keys())
+        
+        # Filter out courses the user has already interacted with
+        courses_to_predict = [c for c in all_courses if c not in user_courses]
+        
+        # Make predictions using the SVD model
+        predictions = []
+        for course_id in courses_to_predict:
+            try:
+                # Make prediction
+                pred = svd_model.predict(user_id, course_id)
+                predictions.append((int(course_id), float(pred.est)))
+            except Exception as e:
+                print(f"Error predicting for course {course_id}: {e}")
+                continue
+                
+        # Sort by predicted rating
+        predictions.sort(key=lambda x: x[1], reverse=True)
+        print(f"Generated {len(predictions)} initial collaborative filtering predictions")
+        
+        # Apply diversification to ensure recommendations aren't all from the same subject
+        diversified_predictions = diversify_recommendations(predictions, courses_df, max_per_subject)
+        
+        # Return top N recommendations, ensuring we don't return more than requested
+        top_predictions = diversified_predictions[:limit]
+        
+        # If we have very few recommendations, supplement with trending but in different subjects
+        if len(top_predictions) < min(5, limit):
+            print(f"Not enough collaborative filtering recommendations ({len(top_predictions)}). Adding trending courses in different subjects.")
+            trending_recs = get_trending_recommendations(limit=limit*2, exclude_subjects=user_subjects)
+            
+            # Mix trending recommendations at the end
+            remaining_slots = limit - len(top_predictions)
+            diversified_trending = diversify_recommendations(trending_recs, courses_df, max_per_subject)
+            
+            # Add trending recs without duplicating course_ids
+            existing_ids = [rec[0] for rec in top_predictions]
+            for trending_rec in diversified_trending:
+                if trending_rec[0] not in existing_ids and len(top_predictions) < limit:
+                    top_predictions.append(trending_rec)
+        
+        print(f"Final collaborative filtering recommendations: {len(top_predictions)} courses")
+        return top_predictions
+        
+    except Exception as e:
+        print(f"Error generating collaborative filtering recommendations: {e}")
+        import traceback
+        traceback.print_exc()
+        # Fall back to trending with diversity rather than returning an empty list
+        try:
+            return diversify_recommendations(get_trending_recommendations(limit*2), courses_df, max_per_subject)[:limit]
+        except:
+            return []
+
+def get_course_recommendations(user_id, limit=10, mongo=None, max_per_subject=2):
     """
     Get course recommendations for a user based on their interactions and preferences.
+    Focuses explicitly on content-based recommendations from user preferences.
     
     Args:
         user_id: The user ID to get recommendations for
         limit: Maximum number of recommendations to return
         mongo: MongoDB connection object
+        max_per_subject: Maximum courses per subject for diversity
     
     Returns:
         List of recommended course IDs with scores
@@ -29,6 +166,8 @@ def get_course_recommendations(user_id, limit=10, mongo=None):
         user_number = user_id.replace('user_', '')
         email = f"test{user_number}@gmail.com"
         
+        print(f"Getting personalized recommendations for {user_id} (email: {email})")
+        
         # Get user preferences from MongoDB
         preferred_topics = []
         preferred_level = "All Levels"
@@ -41,23 +180,50 @@ def get_course_recommendations(user_id, limit=10, mongo=None):
                 preferred_level = user.get("skill_level", "All Levels")
                 preferred_type = user.get("course_type", "All")
                 print(f"Found preferences for {email}: topics={preferred_topics}, level={preferred_level}, type={preferred_type}")
+                
+                # If user has no explicit preferences, try to extract from interactions
+                if not preferred_topics and user_id in interactions_df['user_id'].values:
+                    print("No explicit topic preferences found. Deriving from interactions.")
+                    user_interactions = interactions_df[interactions_df['user_id'] == user_id]
+                    
+                    # Get highly-rated or favorited courses
+                    liked_courses = user_interactions[
+                        (user_interactions['rating'] >= 4) | 
+                        (user_interactions['is_favorite'] == True)
+                    ]['course_id'].unique().tolist()
+                    
+                    if liked_courses:
+                        # Find subjects of liked courses
+                        for course_id in liked_courses:
+                            course_data = courses_df[courses_df['course_id'] == course_id]
+                            if not course_data.empty:
+                                subject = course_data.iloc[0]['subject']
+                                if subject not in preferred_topics:
+                                    preferred_topics.append(subject)
+                        print(f"Derived topic preferences from interactions: {preferred_topics}")
         
         # Initialize an empty DataFrame for filtered courses
         filtered_df = pd.DataFrame()
         
-        # First, try to get courses based on user's explicit preferences
+        # If we have explicit user preferences, prioritize those
         if preferred_topics:
+            print(f"Finding courses matching user's preferred topics: {preferred_topics}")
             # Convert topics to lowercase for case-insensitive matching
             preferred_topics_lower = [topic.lower() for topic in preferred_topics]
             
             # Create a mask for subject matching
-            subject_mask = courses_df['subject'].str.lower().apply(lambda x: any(topic in x for topic in preferred_topics_lower))
-            filtered_df = courses_df[subject_mask]
+            subject_mask = courses_df['subject'].str.lower().apply(lambda x: any(topic in x.lower() for topic in preferred_topics_lower))
+            filtered_df = courses_df[subject_mask].copy()
             print(f"Found {len(filtered_df)} courses matching preferred topics")
-            
-        # If we have interaction data, use it to refine recommendations
+        else:
+            # If no preferred topics, use all courses
+            filtered_df = courses_df.copy()
+        
+        # If user has interaction data, use it to enhance recommendations
+        interacted_courses = []
         if user_id in interactions_df['user_id'].values:
             user_interactions = interactions_df[interactions_df['user_id'] == user_id]
+            interacted_courses = user_interactions['course_id'].unique().tolist()
             
             # Get highly-rated or favorited courses
             liked_courses = user_interactions[
@@ -66,6 +232,7 @@ def get_course_recommendations(user_id, limit=10, mongo=None):
             ]['course_id'].unique().tolist()
             
             if liked_courses:
+                print(f"User has {len(liked_courses)} liked courses")
                 # Find subjects of liked courses
                 liked_subjects = []
                 for course_id in liked_courses:
@@ -75,19 +242,20 @@ def get_course_recommendations(user_id, limit=10, mongo=None):
                         if subject not in liked_subjects:
                             liked_subjects.append(subject)
                 
-                # Add courses from liked subjects if not already in filtered_df
-                if liked_subjects:
+                # If no filtered courses yet OR no explicit preferences but we have liked subjects,
+                # focus on courses from subjects the user has liked
+                if filtered_df.empty or (not preferred_topics and liked_subjects):
                     liked_df = courses_df[courses_df['subject'].isin(liked_subjects)]
-                    if filtered_df.empty:
-                        filtered_df = liked_df
+                    if liked_df.empty:
+                        filtered_df = courses_df.copy()
                     else:
-                        filtered_df = pd.concat([filtered_df, liked_df]).drop_duplicates()
-                    print(f"Added {len(liked_df)} courses from liked subjects")
+                        filtered_df = liked_df.copy()
+                    print(f"Using {len(filtered_df)} courses from liked subjects")
         
-        # If still no recommendations, fall back to popular courses
-        if filtered_df.empty:
-            print("No personalized recommendations found, falling back to popular courses")
-            filtered_df = courses_df
+        # Remove courses the user has already interacted with
+        if interacted_courses:
+            filtered_df = filtered_df[~filtered_df['course_id'].isin(interacted_courses)]
+            print(f"Removed {len(interacted_courses)} already interacted courses")
         
         # Apply level filter if specified
         if preferred_level and preferred_level != "No preference" and preferred_level != "All Levels":
@@ -107,56 +275,72 @@ def get_course_recommendations(user_id, limit=10, mongo=None):
                 filtered_df = filtered_df[filtered_df['is_paid']]
             print(f"Applied type filter, {len(filtered_df)} courses remaining")
         
-        # Remove courses the user has already interacted with
-        if user_id in interactions_df['user_id'].values:
-            interacted_courses = interactions_df[interactions_df['user_id'] == user_id]['course_id'].unique().tolist()
-            filtered_df = filtered_df[~filtered_df['course_id'].isin(interacted_courses)]
-            print(f"Removed {len(interacted_courses)} already interacted courses")
-        
-        # Sort by popularity and relevance score
-        filtered_df = filtered_df.sort_values(by='num_subscribers', ascending=False)
-        
-        # Take top N courses
-        top_courses = filtered_df.head(limit)
-        print(f"Selected top {len(top_courses)} courses")
-        
-        # Return recommendations with a relevance score
-        recommended_courses = []
-        for _, course in top_courses.iterrows():
-            # Calculate a relevance score based on multiple factors
-            relevance_score = 1.0
+        # If still no recommendations or very few, fall back to popular courses
+        if len(filtered_df) < 5:
+            print(f"Not enough personalized courses ({len(filtered_df)}), falling back to popular courses")
+            popular_df = courses_df.sort_values(by='num_subscribers', ascending=False)
             
-            # Increase score if subject matches user's preferred topics
-            if preferred_topics and course['subject'] in preferred_topics:
-                relevance_score *= 1.5
-            
-            # Increase score if level matches user's preferred level
-            if preferred_level != "All Levels" and preferred_level in course['level']:
-                relevance_score *= 1.2
+            # Still exclude courses the user has interacted with
+            if interacted_courses:
+                popular_df = popular_df[~popular_df['course_id'].isin(interacted_courses)]
                 
-            recommended_courses.append((int(course['course_id']), relevance_score))
+            # Combine with any existing filtered results
+            if not filtered_df.empty:
+                filtered_df = pd.concat([filtered_df, popular_df]).drop_duplicates(subset=['course_id'])
+            else:
+                filtered_df = popular_df
         
+        # Ensure diversity across subjects
+        filtered_df = filtered_df.sort_values(by='num_subscribers', ascending=False)
+        top_courses_raw = filtered_df.head(limit * 3)  # Get more to allow for diversity
+        
+        # Convert to recommendations format
+        recs_raw = []
+        for _, course in top_courses_raw.iterrows():
+            # Simple relevance score (0-5) based on subscribers
+            sub_score = min(5.0, course['num_subscribers'] / 100000)
+            recs_raw.append((int(course['course_id']), sub_score))
+        
+        # Apply diversification
+        diversified_recs = diversify_recommendations(recs_raw, courses_df, max_per_subject)
+        
+        # Take top N recommendations
+        recommended_courses = diversified_recs[:limit]
+        
+        print(f"Final personalized recommendations: {len(recommended_courses)} courses")
         return recommended_courses
         
     except Exception as e:
         print(f"Error getting recommendations: {str(e)}")
         import traceback
         traceback.print_exc()
-        return []
+        
+        # Fall back to trending recommendations
+        try:
+            print("Falling back to trending recommendations due to error")
+            return get_trending_recommendations(limit=limit)
+        except:
+            return []
 
-def format_recommendations_response(recommendations, include_details=True):
+def format_recommendations_response(recommendations, include_details=True, recommendation_type="general"):
     """
     Format recommendations for API response.
     
     Args:
         recommendations: List of (course_id, score) tuples
         include_details: Whether to include course details
+        recommendation_type: Type of recommendation ("collaborative", "personalized", "trending", etc.)
     
     Returns:
         Formatted response dictionary
     """
     try:
-        courses_df = pd.read_csv('udemy_course_data.csv')
+        # Try to load from cleaner file first, fall back to old file if needed
+        try:
+            courses_df = pd.read_csv('UdemyCleanedTitle.csv')
+        except:
+            print("Using fallback udemy_course_data.csv")
+            courses_df = pd.read_csv('udemy_course_data.csv')
         
         formatted_recs = []
         for course_id, score in recommendations:
@@ -171,40 +355,109 @@ def format_recommendations_response(recommendations, include_details=True):
                 if not course_data.empty:
                     course = course_data.iloc[0]
                     
-                    rec.update({
-                        "course_title": course['course_title'],
-                        "url": course['url'],
-                        "is_paid": course['is_paid'] == 'TRUE',
-                        "price": course['price'],
-                        "num_subscribers": int(course['num_subscribers']),
-                        "num_reviews": int(course['num_reviews']),
-                        "num_lectures": int(course['num_lectures']),
-                        "level": course['level'],
-                        "content_duration": course['content_duration'],
-                        "published_timestamp": course['published_timestamp'],
-                        "subject": course['subject'],
-                        "Clean_title": course['Clean_title'],
-                        "image_url": None
-                    })
+                    # Create basic course info dictionary with mandatory fields
+                    course_info = {
+                        "course_title": course.get('course_title', ''),
+                        "url": course.get('url', ''),
+                        "price": course.get('price', 0),
+                        "num_subscribers": int(course.get('num_subscribers', 0)),
+                        "num_reviews": int(course.get('num_reviews', 0)),
+                        "num_lectures": int(course.get('num_lectures', 0)),
+                        "level": course.get('level', 'All Levels'),
+                        "subject": course.get('subject', 'General'),
+                        "image_url": ''  # Empty string instead of None for consistent handling
+                    }
+                    
+                    # Add optional fields if they exist
+                    if 'is_paid' in course:
+                        is_paid_val = course['is_paid']
+                        if isinstance(is_paid_val, str):
+                            course_info["is_paid"] = is_paid_val.upper() == 'TRUE'
+                        else:
+                            course_info["is_paid"] = bool(is_paid_val)
+                    else:
+                        course_info["is_paid"] = course.get('price', 0) > 0
+                    
+                    if 'content_duration' in course:
+                        course_info["content_duration"] = course['content_duration']
+                        
+                    if 'published_timestamp' in course:
+                        course_info["published_timestamp"] = course['published_timestamp']
+                        
+                    if 'Clean_title' in course:
+                        course_info["clean_title"] = course['Clean_title']
+                    elif 'clean_title' in course:
+                        course_info["clean_title"] = course['clean_title']
+                    else:
+                        # Generate a clean title if missing
+                        course_info["clean_title"] = course_info["course_title"].replace(' ', '')
+                    
+                    # Add course info to recommendation
+                    rec.update(course_info)
             
             formatted_recs.append(rec)
         
         return {
             "success": True,
-            "recommendations": formatted_recs,
-            "count": len(formatted_recs)
+            "courses": formatted_recs,
+            "count": len(formatted_recs),
+            "recommendation_type": recommendation_type
         }
     except Exception as e:
         print(f"Error formatting recommendations: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {
             "success": False,
             "error": str(e),
             "recommendations": [],
-            "count": 0
+            "count": 0,
+            "recommendation_type": recommendation_type
         }
 
 def add_recommendation_routes(app, mongo=None):
     """Add recommendation routes to the Flask app."""
+    
+    @app.route('/recommendations/trending', methods=['GET'])
+    def get_trending_recommendations_route():
+        """Get trending courses based on subscriber count."""
+        try:
+            # Get limit from query parameters
+            limit = int(request.args.get('limit', 10))
+            
+            # Get email for filtering out subjects (optional)
+            email = request.args.get('email')
+            exclude_subjects = []
+            
+            # If email is provided, we might exclude subjects to provide more diverse recommendations
+            if email and mongo:
+                # Get user's preferred subjects
+                user = mongo.db.users.find_one({"email": email})
+                if user and user.get("preferred_topics"):
+                    # Get subjects the user already has in preferences (optional)
+                    # Uncomment if you want to exclude these from trending
+                    # exclude_subjects = user.get("preferred_topics", [])
+                    pass
+            
+            # Get trending recommendations
+            trending_recs = get_trending_recommendations(limit, exclude_subjects)
+            
+            # Format the response
+            response = format_recommendations_response(
+                trending_recs, 
+                recommendation_type="trending"
+            )
+            
+            return jsonify(response)
+        except Exception as e:
+            print(f"Error getting trending recommendations: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                "success": False,
+                "message": str(e),
+                "recommendation_type": "trending"
+            }), 500
     
     @app.route('/recommendations', methods=['GET'])
     def get_recommendations():
@@ -213,15 +466,24 @@ def add_recommendation_routes(app, mongo=None):
             user_id = request.args.get('user_id')
             limit = int(request.args.get('limit', 10))
             
-            # If no user_id provided, return error
+            # If no user_id provided, return trending recommendations instead
             if not user_id:
-                return jsonify({"success": False, "message": "User ID is required"}), 400
+                print("No user ID provided, returning trending recommendations")
+                trending_recs = get_trending_recommendations(limit)
+                response = format_recommendations_response(
+                    trending_recs, 
+                    recommendation_type="trending"
+                )
+                return jsonify(response)
                 
-            # Get recommendations
+            # Get recommendations with explicit user_id
             recommended_courses = get_course_recommendations(user_id, limit=limit, mongo=mongo)
             
             # Format the response
-            response = format_recommendations_response(recommended_courses)
+            response = format_recommendations_response(
+                recommended_courses, 
+                recommendation_type="general"
+            )
             
             return jsonify(response)
             
@@ -229,7 +491,11 @@ def add_recommendation_routes(app, mongo=None):
             print(f"Error in recommendations: {str(e)}")
             import traceback
             traceback.print_exc()
-            return jsonify({"success": False, "message": str(e)}), 500
+            return jsonify({
+                "success": False, 
+                "message": str(e),
+                "recommendation_type": "general"
+            }), 500
     
     @app.route('/recommendations/for_user', methods=['GET'])
     def get_recommendations_for_email():
@@ -240,7 +506,11 @@ def add_recommendation_routes(app, mongo=None):
             
             # If no email provided, return error
             if not email:
-                return jsonify({"success": False, "message": "Email is required"}), 400
+                return jsonify({
+                    "success": False,
+                    "message": "Email is required",
+                    "recommendation_type": "personalized"
+                }), 400
                 
             # Extract user_id from email
             user_id = f"user_{email.split('@')[0].replace('test', '')}"
@@ -250,7 +520,10 @@ def add_recommendation_routes(app, mongo=None):
             recommended_courses = get_course_recommendations(user_id, limit=limit, mongo=mongo)
             
             # Format the response
-            response = format_recommendations_response(recommended_courses)
+            response = format_recommendations_response(
+                recommended_courses, 
+                recommendation_type="personalized"
+            )
             
             return jsonify(response)
             
@@ -258,7 +531,139 @@ def add_recommendation_routes(app, mongo=None):
             print(f"Error in recommendations for user: {str(e)}")
             import traceback
             traceback.print_exc()
-            return jsonify({"success": False, "message": str(e)}), 500
+            return jsonify({
+                "success": False, 
+                "message": str(e),
+                "recommendation_type": "personalized"
+            }), 500
+    
+    @app.route('/recommendations/collaborative', methods=['GET'])
+    def get_collaborative_recommendations():
+        try:
+            # Get email from query parameters
+            email = request.args.get('email')
+            limit = int(request.args.get('limit', 10))
+            
+            # If no email provided, return error
+            if not email:
+                return jsonify({
+                    "success": False,
+                    "message": "Email is required",
+                    "recommendation_type": "collaborative"
+                }), 400
+                
+            # Get collaborative filtering recommendations
+            recommended_courses = get_collaborative_filtering_recommendations(
+                email, 
+                limit=limit, 
+                max_per_subject=3
+            )
+            
+            # Format the response
+            response = format_recommendations_response(
+                recommended_courses, 
+                recommendation_type="collaborative"
+            )
+            
+            return jsonify(response)
+            
+        except Exception as e:
+            print(f"Error in collaborative filtering recommendations: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                "success": False, 
+                "message": str(e),
+                "recommendation_type": "collaborative"
+            }), 500
+
+def diversify_recommendations(recommendations, courses_df, max_per_subject=3):
+    """
+    Ensure recommendations aren't all from the same subject.
+    
+    Args:
+        recommendations: List of (course_id, score) tuples
+        courses_df: DataFrame containing course information
+        max_per_subject: Maximum number of courses per subject
+        
+    Returns:
+        List of (course_id, score) tuples with subject diversity
+    """
+    if not recommendations:
+        return []
+        
+    subject_counts = {}
+    diversified = []
+    
+    # Sort by predicted rating first
+    sorted_recs = sorted(recommendations, key=lambda x: x[1], reverse=True)
+    
+    for course_id, score in sorted_recs:
+        # Get course subject
+        course_data = courses_df[courses_df['course_id'] == course_id]
+        if course_data.empty:
+            continue
+            
+        subject = course_data.iloc[0]['subject']
+        
+        # Check if we already have max courses from this subject
+        if subject in subject_counts and subject_counts[subject] >= max_per_subject:
+            continue
+            
+        # Add to diversified list
+        diversified.append((course_id, score))
+        subject_counts[subject] = subject_counts.get(subject, 0) + 1
+    
+    print(f"Diversified recommendations: {len(diversified)} courses across {len(subject_counts)} subjects")
+    for subject, count in subject_counts.items():
+        print(f"  - {subject}: {count} courses")
+    
+    return diversified
+
+def get_trending_recommendations(limit=10, exclude_subjects=None):
+    """
+    Get trending courses based on subscriber count.
+    
+    Args:
+        limit: Maximum number of recommendations to return
+        exclude_subjects: List of subjects to exclude (optional)
+        
+    Returns:
+        List of course recommendations with scores
+    """
+    try:
+        # Load course data
+        courses_df = pd.read_csv('UdemyCleanedTitle.csv')
+        
+        # Apply subject exclusion if provided
+        if exclude_subjects and len(exclude_subjects) > 0:
+            before_count = len(courses_df)
+            courses_df = courses_df[~courses_df['subject'].isin(exclude_subjects)]
+            after_count = len(courses_df)
+            print(f"Excluded {before_count - after_count} courses from {len(exclude_subjects)} subjects")
+        
+        # Sort by subscribers (descending)
+        trending_df = courses_df.sort_values(by='num_subscribers', ascending=False)
+        
+        # Get top N courses
+        top_courses = trending_df.head(limit)
+        
+        # Format as (course_id, score) tuples
+        trending_recommendations = []
+        for _, course in top_courses.iterrows():
+            # Use normalized subscriber count as relevance score (0-5 scale)
+            # This keeps the format consistent with other recommendation functions
+            subscriber_score = min(5.0, float(course['num_subscribers'])/100000)
+            trending_recommendations.append((int(course['course_id']), subscriber_score))
+        
+        print(f"Generated {len(trending_recommendations)} trending recommendations")
+        return trending_recommendations
+    
+    except Exception as e:
+        print(f"Error getting trending recommendations: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 # Testing
 if __name__ == "__main__":
@@ -276,4 +681,10 @@ if __name__ == "__main__":
     
     # Print the formatted recommendations
     import json
-    print(json.dumps(response, indent=2)) 
+    print(json.dumps(response, indent=2))
+    
+    # Test collaborative filtering
+    print("\nTesting collaborative filtering...")
+    cf_recommendations = get_collaborative_filtering_recommendations("test1@example.com", limit=5)
+    cf_response = format_recommendations_response(cf_recommendations, recommendation_type="collaborative")
+    print(json.dumps(cf_response, indent=2)) 
