@@ -897,4 +897,49 @@ class ApiService {
       return await getRecommendedCourses(limit: limit);
     }
   }
+  
+  // Update user profile
+  Future<User?> updateUserProfile({required String name}) async {
+    try {
+      if (_currentUser == null) {
+        print('User not logged in, cannot update profile');
+        return null;
+      }
+      
+      print('Updating user profile for: ${_currentUser!.email}');
+      print('New name: $name');
+      
+      final response = await _dio.post(
+        '$baseUrl/user/profile',
+        data: {
+          'email': _currentUser!.email,
+          'name': name,
+        },
+      );
+      
+      print('Profile update response status: ${response.statusCode}');
+      print('Profile update response data: ${response.data}');
+      
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        // Create updated user object
+        final updatedUser = User(
+          id: _currentUser!.id,
+          name: name,
+          email: _currentUser!.email,
+        );
+        
+        // Update current user in the service
+        _currentUser = updatedUser;
+        
+        print('User profile updated successfully: ${updatedUser.name}');
+        return updatedUser;
+      } else {
+        print('Failed to update user profile: ${response.data['message'] ?? 'Unknown error'}');
+        return null;
+      }
+    } catch (e) {
+      print('Error updating user profile: $e');
+      return null;
+    }
+  }
 } 

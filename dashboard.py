@@ -57,6 +57,9 @@ def yearwiseprofit(df: pd.DataFrame) -> Tuple[Dict[str, float], Dict[str, int], 
         if not all(col in df.columns for col in ['price', 'num_subscribers', 'published_timestamp']):
             return {}, {}, {}, {}
             
+        # Create an explicit copy to avoid the SettingWithCopyWarning
+        df = df.copy()
+        
         # Clean and convert price data
         df['price'] = df['price'].replace({'FREE': '0', 'True': '0', 'Free': '0'}, regex=True)
         df['price'] = pd.to_numeric(df['price'], errors='coerce').fillna(0)

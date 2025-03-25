@@ -46,6 +46,13 @@ class _CourseCardState extends State<CourseCard> {
 
   void _toggleFavorite(BuildContext context) {
     print('Toggling favorite for course: ${widget.course.id}');
+    
+    // Prevent multiple rapid clicks
+    if (_isProcessing) {
+      print('Already processing favorite toggle. Ignoring request.');
+      return;
+    }
+    
     final course = widget.course;
     
     // Check if user is logged in
@@ -64,25 +71,41 @@ class _CourseCardState extends State<CourseCard> {
       return;
     }
 
+    // Set processing flag
+    _isProcessing = true;
+
+    // Toggle the favorite state
+    final newFavoriteState = !_isFavorite;
+
     // Update local state for immediate feedback
     setState(() {
-      _isFavorite = !_isFavorite;
+      _isFavorite = newFavoriteState;
     });
     
     // Dispatch the toggle event
     context.read<CourseBloc>().add(ToggleFavorite(course.id));
+
+    // Call the callback if provided
+    if (widget.onFavoriteToggled != null) {
+      widget.onFavoriteToggled!(course.id, newFavoriteState);
+    }
     
     // Provide feedback to user
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          course.isFavorite 
-            ? 'Removed from favorites' 
-            : 'Added to favorites',
+          _isFavorite 
+            ? 'Added to favorites'
+            : 'Removed from favorites',
         ),
         duration: Duration(seconds: 1),
       ),
     );
+    
+    // Reset processing flag after a delay
+    Future.delayed(const Duration(seconds: 1), () {
+      _isProcessing = false;
+    });
   }
 
   @override
@@ -217,8 +240,8 @@ class _CourseCardState extends State<CourseCard> {
                             GestureDetector(
                               onTap: () => _toggleFavorite(context),
                               child: Icon(
-                                widget.course.isFavorite ? Icons.favorite : Icons.favorite_border,
-                                color: widget.course.isFavorite ? Colors.red : Colors.white,
+                                _isFavorite ? Icons.favorite : Icons.favorite_border,
+                                color: _isFavorite ? Colors.red : Colors.white,
                                 size: 18,
                               ),
                             ),

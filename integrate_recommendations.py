@@ -18,7 +18,8 @@ COURSE_MAPPING_PATH = 'course_mapping.pkl'
 
 def get_collaborative_filtering_recommendations(email, limit=10, max_per_subject=3):
     """
-    Get recommendations for a user using the collaborative filtering model.
+    Get recommendations for a user using a simplified collaborative filtering approach.
+    This version uses user similarity based on course interactions and ratings.
     
     Args:
         email: User's email address
@@ -29,37 +30,22 @@ def get_collaborative_filtering_recommendations(email, limit=10, max_per_subject
         List of course recommendations with scores
     """
     try:
-        # Load models if they exist
-        if not os.path.exists(SVD_MODEL_PATH) or not os.path.exists(COURSE_MAPPING_PATH):
-            print("Collaborative filtering models not found. Please run train_collaborative_filtering.py")
-            return []
-            
-        # Load the SVD model and course mapping
-        with open(SVD_MODEL_PATH, 'rb') as f:
-            svd_model = pickle.load(f)
-            
-        with open(COURSE_MAPPING_PATH, 'rb') as f:
-            course_to_idx = pickle.load(f)
-            
         # Load interactions and course data
         interactions_df = pd.read_csv('user_interactions.csv')
         courses_df = pd.read_csv('UdemyCleanedTitle.csv')
         
         # Convert email to user_id format
-        # Extract username from email (e.g., "user123@example.com" -> "user_123")
         if '@' in email:
             username = email.split('@')[0]
             if username.startswith('test'):
                 user_id = f"user_{username.replace('test', '')}"
             else:
-                # Try to find a matching user_id in interactions
                 matching_users = interactions_df[interactions_df['user_id'].str.contains(username)]
                 if not matching_users.empty:
                     user_id = matching_users['user_id'].iloc[0]
                 else:
                     user_id = f"user_{username}"
         else:
-            # If not an email, assume it's already a user_id
             user_id = email
             
         print(f"Using user_id: {user_id} for collaborative filtering")
@@ -69,8 +55,7 @@ def get_collaborative_filtering_recommendations(email, limit=10, max_per_subject
         
         if user_interactions.empty:
             print(f"No interactions found for user {user_id}. Falling back to trending courses with diversity.")
-            # Return trending courses with diversity instead of just popular courses
-            trending_recs = get_trending_recommendations(limit=limit*3)  # Get more to allow for diversification
+            trending_recs = get_trending_recommendations(limit=limit*3)
             return diversify_recommendations(trending_recs, courses_df, max_per_subject)
             
         # Get courses the user has already interacted with
@@ -88,56 +73,54 @@ def get_collaborative_filtering_recommendations(email, limit=10, max_per_subject
         
         print(f"User has interacted with courses from {len(user_subjects)} subjects: {user_subjects}")
         
-        # Get all courses
-        all_courses = list(course_to_idx.keys())
-        
-        # Filter out courses the user has already interacted with
-        courses_to_predict = [c for c in all_courses if c not in user_courses]
-        
-        # Make predictions using the SVD model
-        predictions = []
-        for course_id in courses_to_predict:
-            try:
-                # Make prediction
-                pred = svd_model.predict(user_id, course_id)
-                predictions.append((int(course_id), float(pred.est)))
-            except Exception as e:
-                print(f"Error predicting for course {course_id}: {e}")
-                continue
+        # Find similar users based on course interactions
+        similar_users = []
+        for other_user in interactions_df['user_id'].unique():
+            if other_user != user_id:
+                other_interactions = interactions_df[interactions_df['user_id'] == other_user]
+                common_courses = set(user_courses) & set(other_interactions['course_id'].tolist())
                 
-        # Sort by predicted rating
-        predictions.sort(key=lambda x: x[1], reverse=True)
-        print(f"Generated {len(predictions)} initial collaborative filtering predictions")
+                if len(common_courses) > 0:
+                    # Calculate similarity score based on common courses and ratings
+                    similarity_score = 0
+                    for course_id in common_courses:
+                        user_rating = user_interactions[user_interactions['course_id'] == course_id]['rating'].iloc[0]
+                        other_rating = other_interactions[other_interactions['course_id'] == course_id]['rating'].iloc[0]
+                        similarity_score += 1 - abs(user_rating - other_rating) / 5
+                    
+                    similarity_score = similarity_score / len(common_courses)
+                    similar_users.append((other_user, similarity_score))
         
-        # Apply diversification to ensure recommendations aren't all from the same subject
-        diversified_predictions = diversify_recommendations(predictions, courses_df, max_per_subject)
+        # Sort similar users by similarity score
+        similar_users.sort(key=lambda x: x[1], reverse=True)
+        similar_users = similar_users[:10]  # Take top 10 similar users
         
-        # Return top N recommendations, ensuring we don't return more than requested
-        top_predictions = diversified_predictions[:limit]
-        
-        # If we have very few recommendations, supplement with trending but in different subjects
-        if len(top_predictions) < min(5, limit):
-            print(f"Not enough collaborative filtering recommendations ({len(top_predictions)}). Adding trending courses in different subjects.")
-            trending_recs = get_trending_recommendations(limit=limit*2, exclude_subjects=user_subjects)
+        # Get courses liked by similar users
+        recommended_courses = []
+        for similar_user, _ in similar_users:
+            similar_user_interactions = interactions_df[
+                (interactions_df['user_id'] == similar_user) & 
+                (interactions_df['rating'] >= 4) &  # Only consider highly rated courses
+                (~interactions_df['course_id'].isin(user_courses))  # Exclude user's courses
+            ]
             
-            # Mix trending recommendations at the end
-            remaining_slots = limit - len(top_predictions)
-            diversified_trending = diversify_recommendations(trending_recs, courses_df, max_per_subject)
-            
-            # Add trending recs without duplicating course_ids
-            existing_ids = [rec[0] for rec in top_predictions]
-            for trending_rec in diversified_trending:
-                if trending_rec[0] not in existing_ids and len(top_predictions) < limit:
-                    top_predictions.append(trending_rec)
+            for _, interaction in similar_user_interactions.iterrows():
+                course_id = interaction['course_id']
+                rating = interaction['rating']
+                recommended_courses.append((course_id, rating))
         
-        print(f"Final collaborative filtering recommendations: {len(top_predictions)} courses")
-        return top_predictions
+        # Sort by rating and apply diversity
+        recommended_courses.sort(key=lambda x: x[1], reverse=True)
+        diversified_recommendations = diversify_recommendations(recommended_courses, courses_df, max_per_subject)
+        
+        # Return top N recommendations
+        return diversified_recommendations[:limit]
         
     except Exception as e:
         print(f"Error generating collaborative filtering recommendations: {e}")
         import traceback
         traceback.print_exc()
-        # Fall back to trending with diversity rather than returning an empty list
+        # Fall back to trending with diversity
         try:
             return diversify_recommendations(get_trending_recommendations(limit*2), courses_df, max_per_subject)[:limit]
         except:

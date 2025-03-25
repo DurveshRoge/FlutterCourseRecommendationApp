@@ -30,7 +30,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
   
   Future<void> _refreshUserPreferences() async {
+    if (!mounted) return;
+    
     final apiService = context.read<ApiService>();
+    AuthBloc? authBloc;
+    
+    // Get a reference to AuthBloc before any async operations
+    if (mounted) {
+      authBloc = context.read<AuthBloc>();
+    } else {
+      return;
+    }
     
     setState(() {
       _isLoading = true;
@@ -38,17 +48,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     
     try {
       await apiService.refreshUserPreferences();
-      // Update the AuthBloc with the refreshed user data
-      final user = apiService.currentUser;
-      if (user != null) {
-        context.read<AuthBloc>().add(RefreshUserData(user));
+      
+      // Update the AuthBloc with the refreshed user data if widget is still mounted
+      if (mounted && authBloc != null) {
+        final user = apiService.currentUser;
+        if (user != null) {
+          authBloc.add(RefreshUserData(user));
+        }
       }
     } catch (e) {
       print('Error refreshing user preferences: $e');
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -94,18 +109,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           iconColor: Colors.blue,
                           title: 'Learning Preferences',
                           subtitle: 'Update your topics, skill level, and interests',
-                          onTap: () {
-                            Navigator.push(
+                          onTap: () async {
+                            // Save references before navigation
+                            CourseBloc? courseBloc;
+                            if (mounted) {
+                              courseBloc = context.read<CourseBloc>();
+                            }
+                            
+                            await Navigator.push(
                               context, 
                               MaterialPageRoute(
                                 builder: (_) => PreferencesScreen(user: user, isUpdate: true)
                               )
-                            ).then((_) {
-                              // Refresh recommendations when returning from preferences screen
-                              context.read<CourseBloc>().add(LoadPersonalizedRecommendations());
-                              // Also refresh user data
-                              _refreshUserPreferences();
+                            );
+                            
+                            // Check if widget is still mounted after coming back
+                            if (!mounted) return;
+                            
+                            // After returning from preferences screen, trigger a full state rebuild
+                            setState(() {
+                              _isLoading = true;
                             });
+                            
+                            // Refresh user preferences and recommendation data
+                            await _refreshUserPreferences();
+                            
+                            // Refresh recommendations if still mounted
+                            if (mounted && courseBloc != null) {
+                              courseBloc.add(LoadPersonalizedRecommendations());
+                            }
                           },
                         ),
                         _buildSettingsTile(
@@ -311,10 +343,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Marketing',
     ];
     
-    // Filter to only show valid topics
+    // Filter to only show valid topics and ensure we have fresh data
     final List<String> displayTopics = user.preferredTopics
         .where((topic) => validTopics.contains(topic))
         .toList();
+    
+    print('=== Building user header card ===');
+    print('User: ${user.name} (${user.email})');
+    print('All preferred topics: ${user.preferredTopics}');
+    print('Display topics after filtering: $displayTopics');
     
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),

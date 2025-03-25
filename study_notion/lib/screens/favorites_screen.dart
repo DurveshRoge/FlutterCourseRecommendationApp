@@ -132,14 +132,12 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                       return CourseCard(
                         course: state.courses[index],
                         onRatingChanged: (courseId, rating) {
-                          // Refresh the favorites list when a course is rated
-                          context.read<CourseBloc>().add(LoadFavorites());
+                          // Don't need to refresh the favorites list when a course is rated
+                          // Let the BLoC handle updating the UI automatically
                         },
                         onFavoriteToggled: (courseId, isFavorite) {
-                          // Refresh the favorites list when a course is removed from favorites
-                          if (!isFavorite) {
-                            context.read<CourseBloc>().add(LoadFavorites());
-                          }
+                          // Don't need a separate call to load favorites
+                          // The BLoC will handle updating the UI automatically
                         },
                       );
                     },

@@ -15,6 +15,7 @@ import 'package:study_notion/screens/dashboard_screen.dart';
 import 'package:study_notion/screens/search_screen.dart';
 import 'package:study_notion/screens/preferences_screen.dart';
 import 'package:study_notion/screens/appearance_settings_screen.dart';
+import 'package:study_notion/screens/collaborative_recommendations_screen.dart';
 import 'package:study_notion/services/api_service.dart';
 
 // Import theme provider
@@ -111,6 +112,7 @@ class MyApp extends StatelessWidget {
         },
         '/appearance': (context) => const AppearanceSettingsScreen(),
         '/recommendations': (context) => const RecommendationsScreen(),
+        '/collaborative': (context) => const CollaborativeRecommendationsScreen(),
       },
     );
   }

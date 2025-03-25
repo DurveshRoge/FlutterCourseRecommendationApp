@@ -63,25 +63,24 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     // Load initial data
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadInitialData();
-      
-      // If we're starting on the favorites tab, load favorites
-      if (widget.initialTab == 2) {
-        final authState = context.read<AuthBloc>().state;
-        if (authState is Authenticated) {
-          context.read<CourseBloc>().add(LoadFavorites());
-        }
-      }
     });
   }
   
   void _loadInitialData() {
     final authState = context.read<AuthBloc>().state;
     if (authState is Authenticated) {
+      // Always load trending courses for the Discover tab
+      if (widget.initialTab == 0) {
+        context.read<CourseBloc>().add(LoadTrendingCourses());
+      }
+      
       // Load personalized recommendations based on preferences
       context.read<CourseBloc>().add(LoadPersonalizedRecommendations());
       
-      // Load favorites
-      context.read<CourseBloc>().add(LoadFavorites());
+      // Load favorites if we're on the favorites tab
+      if (widget.initialTab == 2) {
+        context.read<CourseBloc>().add(LoadFavorites());
+      }
     } else {
       // Load trending courses for non-logged in users
       context.read<CourseBloc>().add(LoadTrendingCourses());
@@ -250,7 +249,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             },
             builder: (context, state) {
               // Check for loading state
-              if (state is CourseLoading) {
+              if (state is CourseLoading || state is TrendingCoursesLoading) {
                 return const Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -277,8 +276,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         suffixIcon: IconButton(
                           icon: const Icon(Icons.clear),
                           onPressed: () {
-                            // Clear search and reset to empty state
-                            context.read<CourseBloc>().add(SearchCourses(""));
+                            // Clear search and reset to trending courses
+                            context.read<CourseBloc>().add(LoadTrendingCourses());
                           },
                         ),
                         filled: true,
@@ -292,6 +291,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       onSubmitted: (query) {
                         if (query.isNotEmpty) {
                           context.read<CourseBloc>().add(SearchCourses(query));
+                        } else {
+                          // If search is empty, show trending courses
+                          context.read<CourseBloc>().add(LoadTrendingCourses());
                         }
                       },
                     ),
@@ -407,11 +409,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   return _buildLoginPrompt();
                 }
                 
-                // If user is logged in but we don't have favorites loaded yet, load them
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  context.read<CourseBloc>().add(LoadFavorites());
-                });
-                
+                // Just show loading indicator without triggering another load
                 return const Center(
                   child: CircularProgressIndicator(
                     color: Color(0xFF3AAFA9),
@@ -443,10 +441,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             context.read<CourseBloc>().add(RateCourse(courseId, rating));
           },
           onFavoriteToggled: (courseId, isFavorite) {
-            // Only reload favorites if unfavorited on the favorites tab
-            if (_tabController.index == 2 && !isFavorite) {
-              context.read<CourseBloc>().add(LoadFavorites());
-            }
+            // The BLoC will handle the state updates, no need for separate LoadFavorites
           },
         );
       },
@@ -700,8 +695,64 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildDiscoverContent(CourseState state) {
-    // Only show courses for search results
-    if (state is CourseLoaded && state.courses.isNotEmpty && state.type == CourseType.search) {
+    // Show courses for search results
+    if (state is CourseLoaded && state.courses.isNotEmpty) {
+      if (state.type == CourseType.search || state.type == CourseType.trending) {
+        return GridView.builder(
+          padding: const EdgeInsets.all(16),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            childAspectRatio: 0.68,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+          ),
+          itemCount: state.courses.length,
+          itemBuilder: (context, index) {
+            return CourseCard(
+              course: state.courses[index],
+              onRatingChanged: _handleCourseRating,
+              onFavoriteToggled: _handleCourseFavorite,
+            );
+          },
+        );
+      }
+    } 
+    
+    if (state is CourseLoaded && state.courses.isEmpty && state.type == CourseType.search) {
+      // When search was performed but no results found
+      return _buildPlaceholderState(
+        icon: Icons.search_off,
+        title: 'No Search Results',
+        message: 'No courses found for the given search term. Try a different query.',
+      );
+    } 
+    
+    if (state is CourseLoading) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF3AAFA9)),
+            ),
+            SizedBox(height: 16),
+            Text('Searching...'),
+          ],
+        ),
+      );
+    } 
+    
+    if (state is CourseError) {
+      return _buildPlaceholderState(
+        icon: Icons.error,
+        title: 'Error',
+        message: 'An error occurred. Please try again later.',
+        isError: true,
+      );
+    } 
+    
+    if (state is TrendingCoursesLoaded && state.courses.isNotEmpty) {
+      // Show trending courses
       return GridView.builder(
         padding: const EdgeInsets.all(16),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -719,60 +770,45 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           );
         },
       );
-    } else if (state is CourseLoaded && state.courses.isEmpty && state.type == CourseType.search) {
-      // When search was performed but no results found
-      return _buildPlaceholderState(
-        icon: Icons.search_off,
-        title: 'No Search Results',
-        message: 'No courses found for the given search term. Try a different query.',
-      );
-    } else if (state is CourseLoading) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF3AAFA9)),
+    } 
+    
+    // Default state - prompt user to search
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.search, size: 64, color: Colors.grey[400]),
+          const SizedBox(height: 16),
+          const Text(
+            'Search for Courses',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
             ),
-            SizedBox(height: 16),
-            Text('Searching...'),
-          ],
-        ),
-      );
-    } else if (state is CourseError) {
-      return _buildPlaceholderState(
-        icon: Icons.error,
-        title: 'Error',
-        message: 'An error occurred. Please try again later.',
-        isError: true,
-      );
-    } else {
-      // Default state - prompt user to search
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search, size: 64, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            const Text(
-              'Search for Courses',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              'Enter a search term above to find courses that match your interests',
+              style: TextStyle(color: Colors.grey[600]),
+              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                'Enter a search term above to find courses that match your interests',
-                style: TextStyle(color: Colors.grey[600]),
-                textAlign: TextAlign.center,
-              ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: () {
+              context.read<CourseBloc>().add(LoadTrendingCourses());
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF3AAFA9),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
-          ],
-        ),
-      );
-    }
+            child: const Text('Show Trending Courses'),
+          ),
+        ],
+      ),
+    );
   }
 } 

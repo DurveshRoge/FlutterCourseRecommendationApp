@@ -328,6 +328,14 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         popularity: _popularityImportance,
       );
 
+      // Refresh user preferences from the server
+      await apiService.refreshUserPreferences();
+      
+      // Update the AuthBloc with the current user (which now has updated preferences)
+      if (apiService.currentUser != null) {
+        context.read<AuthBloc>().add(RefreshUserData(apiService.currentUser!));
+      }
+
       print('=== Getting Updated Recommendations ===');
       final recommendations = await apiService.getPersonalizedRecommendations();
       print('Received ${recommendations.length} recommendations');

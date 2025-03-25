@@ -1,21 +1,21 @@
-from os import read
-import os  # Import for environment variables and os.urandom
-from flask import Flask, request, render_template, jsonify, session
-from flask_pymongo import PyMongo
-from flask_bcrypt import Bcrypt
-from flask_cors import CORS
-from bson.json_util import dumps
+import os
 import json
 from datetime import timedelta
-
 import pandas as pd
 import numpy as np
 import neattext.functions as nfx
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity, linear_kernel
-from dashboard import getvaluecounts, getlevelcount, getsubjectsperlevel, yearwiseprofit
+from bson.json_util import dumps
 
-# Import the recommendation routes function
+# Flask and extensions
+from flask import Flask, request, render_template, jsonify, session
+from flask_pymongo import PyMongo
+from flask_bcrypt import Bcrypt
+from flask_cors import CORS
+
+# Local imports
+from dashboard import getvaluecounts, getlevelcount, getsubjectsperlevel, yearwiseprofit
 from integrate_recommendations import add_recommendation_routes
 
 app = Flask(__name__)

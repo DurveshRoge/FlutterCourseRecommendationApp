@@ -490,17 +490,25 @@ class CourseBloc extends Bloc<CourseEvent, CourseState> {
     Emitter<CourseState> emit,
   ) async {
     // Check if already loaded
-    if (state is FavoriteCoursesLoaded) {
+    if (state is CourseLoaded && (state as CourseLoaded).type == CourseType.favorites) {
       return;
     }
     
     // Skip if already loading
-    if (state is FavoriteCoursesLoading) {
+    if (state is CourseLoading) {
       return;
     }
     
+    // Add throttling to prevent too many API calls in quick succession
+    final now = DateTime.now();
+    if (now.difference(_lastFavoriteLoad).inSeconds < 2) {
+      print("Throttling LoadFavorites call - too frequent");
+      return;
+    }
+    _lastFavoriteLoad = now;
+    
     // Emit loading state
-    emit(FavoriteCoursesLoading());
+    emit(CourseLoading());
     
     try {
       final courses = await _apiService.getFavoriteCourses();
@@ -511,10 +519,13 @@ class CourseBloc extends Bloc<CourseEvent, CourseState> {
         course.copyWith(isFavorite: true)
       ).toList();
       
-      // Emit loaded state
-      emit(FavoriteCoursesLoaded(favoriteCourses));
+      // Update the cache
+      _courseCache[_getCacheKey(CourseType.favorites)] = favoriteCourses;
+      
+      // Emit only CourseLoaded state with type favorites
+      emit(CourseLoaded(favoriteCourses, CourseType.favorites));
     } catch (e) {
-      emit(FavoriteCoursesError('Failed to load favorites: ${e.toString()}'));
+      emit(CourseError('Failed to load favorites: ${e.toString()}'));
     }
   }
 

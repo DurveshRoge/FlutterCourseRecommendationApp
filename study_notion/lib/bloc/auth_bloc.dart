@@ -114,6 +114,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<LogoutUser>(_onLogoutUser);
     on<CheckAuthStatus>(_onCheckAuthStatus);
     on<UpdateUserPreferences>(_onUpdateUserPreferences);
+    on<RefreshUserData>(_onRefreshUserData);
   }
 
   Future<void> _onRegisterUser(
@@ -229,5 +230,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     Emitter<AuthState> emit,
   ) {
     // Implementation of _onUpdateUserPreferences method
+  }
+  
+  void _onRefreshUserData(
+    RefreshUserData event,
+    Emitter<AuthState> emit,
+  ) {
+    // Immediately emit the new authenticated state with the updated user data
+    emit(Authenticated(user: event.user));
   }
 } 

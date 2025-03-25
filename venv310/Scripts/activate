@@ -38,7 +38,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="C:\Users\durvesh\Desktop\Build-a-Udemy-Course-Recommendation-System-Machine-Learning-AI-Project\venv310"
+VIRTUAL_ENV="D:\new\Udemy-Course-Recommendation-System\venv310"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"

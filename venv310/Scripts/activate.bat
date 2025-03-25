@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set VIRTUAL_ENV=C:\Users\durvesh\Desktop\Build-a-Udemy-Course-Recommendation-System-Machine-Learning-AI-Project\venv310
+set VIRTUAL_ENV=D:\new\Udemy-Course-Recommendation-System\venv310
 
 if not defined PROMPT set PROMPT=$P$G
 
