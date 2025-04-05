@@ -15,13 +15,13 @@ class ApiService {
     _init();
   }
 
-  // Base URL for API endpoints - web uses localhost, mobile emulator uses 10.0.2.2 (which routes to host's localhost)
+  // Base URL for API endpoints - now includes support for real devices on same WiFi
   String baseUrl = kIsWeb 
       ? 'http://localhost:5000' 
       : Platform.isAndroid
-          ? 'http://10.0.2.2:5000'  // Android Emulator
+          ? 'http://192.168.10.80:5000'  // Replace with your PC's IP address
           : Platform.isIOS 
-              ? 'http://localhost:5000'  // iOS Simulator
+              ? 'http://192.168.10.80:5000'  // Replace with your PC's IP address
               : 'http://localhost:5000'; // Fallback for other platforms
 
   late Dio _dio;
@@ -942,4 +942,4 @@ class ApiService {
       return null;
     }
   }
-} 
+}

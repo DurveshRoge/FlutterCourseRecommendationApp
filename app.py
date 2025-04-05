@@ -29,7 +29,7 @@ CORS(app, resources={
 
 # MongoDB Configuration
 # Use environment variable or fallback to default
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://Durveshroge:durvesh123@cluster0.kxdlj.mongodb.net/Udemydatabase?retryWrites=true&w=majority&appName=Cluster0")
+MONGO_URI = os.environ.get("MONGO_URI")
 app.config["MONGO_URI"] = MONGO_URI
 
 # Session Configuration
