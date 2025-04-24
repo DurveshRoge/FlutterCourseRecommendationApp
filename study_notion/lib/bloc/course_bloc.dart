@@ -481,7 +481,7 @@ class CourseBloc extends Bloc<CourseEvent, CourseState> {
       }
     } catch (e) {
       print('Error toggling favorite: $e');
-      // Don't change state on error, just log
+      emit(CourseError('Failed to update favorite status: ${e.toString()}'));
     }
   }
 

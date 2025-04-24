@@ -69,264 +69,278 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Settings',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.5,
+    return WillPopScope(
+      onWillPop: () async {
+        // Handle back navigation
+        Navigator.of(context).pop();
+        return false; // Prevent default back behavior
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'Settings',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
+          backgroundColor: const Color(0xFF17252A),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
           ),
         ),
-        elevation: 0,
-        backgroundColor: const Color(0xFF17252A),
-      ),
-      body: _isLoading 
-          ? const Center(
-              child: CircularProgressIndicator(
-                color: Color(0xFF3AAFA9),
-              ),
-            )
-          : BlocBuilder<AuthBloc, AuthState>(
-              builder: (context, state) {
-                if (state is Authenticated) {
-                  final user = state.user;
-                  return RefreshIndicator(
-                    onRefresh: _refreshUserPreferences,
-                    color: const Color(0xFF3AAFA9),
-                    child: ListView(
-                      padding: const EdgeInsets.all(0),
-                      children: [
-                        _buildUserHeaderCard(user),
-                        const SizedBox(height: 20),
-                        _buildCategoryHeader(
-                          icon: Icons.tune_rounded,
-                          title: 'Preferences',
-                        ),
-                        _buildSettingsTile(
-                          icon: Icons.school_rounded,
-                          iconBgColor: Colors.blue.withOpacity(0.1),
-                          iconColor: Colors.blue,
-                          title: 'Learning Preferences',
-                          subtitle: 'Update your topics, skill level, and interests',
-                          onTap: () async {
-                            // Save references before navigation
-                            CourseBloc? courseBloc;
-                            if (mounted) {
-                              courseBloc = context.read<CourseBloc>();
-                            }
-                            
-                            await Navigator.push(
-                              context, 
-                              MaterialPageRoute(
-                                builder: (_) => PreferencesScreen(user: user, isUpdate: true)
-                              )
-                            );
-                            
-                            // Check if widget is still mounted after coming back
-                            if (!mounted) return;
-                            
-                            // After returning from preferences screen, trigger a full state rebuild
-                            setState(() {
-                              _isLoading = true;
-                            });
-                            
-                            // Refresh user preferences and recommendation data
-                            await _refreshUserPreferences();
-                            
-                            // Refresh recommendations if still mounted
-                            if (mounted && courseBloc != null) {
-                              courseBloc.add(LoadPersonalizedRecommendations());
-                            }
-                          },
-                        ),
-                        _buildSettingsTile(
-                          icon: Icons.notification_important_rounded,
-                          iconBgColor: Colors.amber.withOpacity(0.1),
-                          iconColor: Colors.amber,
-                          title: 'Notifications',
-                          subtitle: 'Configure your notification preferences',
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const NotificationSettingsScreen(),
+        body: _isLoading 
+            ? const Center(
+                child: CircularProgressIndicator(
+                  color: Color(0xFF3AAFA9),
+                ),
+              )
+            : BlocBuilder<AuthBloc, AuthState>(
+                builder: (context, state) {
+                  if (state is Authenticated) {
+                    final user = state.user;
+                    return RefreshIndicator(
+                      onRefresh: _refreshUserPreferences,
+                      color: const Color(0xFF3AAFA9),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildUserHeaderCard(user),
+                            const SizedBox(height: 20),
+                            _buildCategoryHeader(
+                              icon: Icons.tune_rounded,
+                              title: 'Preferences',
+                            ),
+                            _buildSettingsTile(
+                              icon: Icons.school_rounded,
+                              iconBgColor: Colors.blue.withOpacity(0.1),
+                              iconColor: Colors.blue,
+                              title: 'Learning Preferences',
+                              subtitle: 'Update your topics, skill level, and interests',
+                              onTap: () async {
+                                // Save references before navigation
+                                CourseBloc? courseBloc;
+                                if (mounted) {
+                                  courseBloc = context.read<CourseBloc>();
+                                }
+                                
+                                await Navigator.push(
+                                  context, 
+                                  MaterialPageRoute(
+                                    builder: (_) => PreferencesScreen(user: user, isUpdate: true)
+                                  )
+                                );
+                                
+                                // Check if widget is still mounted after coming back
+                                if (!mounted) return;
+                                
+                                // After returning from preferences screen, trigger a full state rebuild
+                                setState(() {
+                                  _isLoading = true;
+                                });
+                                
+                                // Refresh user preferences and recommendation data
+                                await _refreshUserPreferences();
+                                
+                                // Refresh recommendations if still mounted
+                                if (mounted && courseBloc != null) {
+                                  courseBloc.add(LoadPersonalizedRecommendations());
+                                }
+                              },
+                            ),
+                            _buildSettingsTile(
+                              icon: Icons.notification_important_rounded,
+                              iconBgColor: Colors.amber.withOpacity(0.1),
+                              iconColor: Colors.amber,
+                              title: 'Notifications',
+                              subtitle: 'Configure your notification preferences',
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const NotificationSettingsScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                            _buildSettingsTile(
+                              icon: Icons.nightlight_round,
+                              iconBgColor: Colors.indigo.withOpacity(0.1),
+                              iconColor: Colors.indigo,
+                              title: 'Appearance',
+                              subtitle: 'Dark mode and theme settings',
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const AppearanceSettingsScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            const Divider(height: 1, thickness: 1, indent: 16, endIndent: 16),
+                            const SizedBox(height: 16),
+                            _buildCategoryHeader(
+                              icon: Icons.account_circle_rounded,
+                              title: 'Account',
+                            ),
+                            _buildSettingsTile(
+                              icon: Icons.manage_accounts_rounded,
+                              iconBgColor: Colors.green.withOpacity(0.1),
+                              iconColor: Colors.green,
+                              title: 'Account Settings',
+                              subtitle: 'Manage your account details and password',
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const AccountSettingsScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                            _buildSettingsTile(
+                              icon: Icons.privacy_tip_rounded,
+                              iconBgColor: Colors.purple.withOpacity(0.1),
+                              iconColor: Colors.purple,
+                              title: 'Privacy',
+                              subtitle: 'Manage your privacy settings and data',
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const PrivacySettingsScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            const Divider(height: 1, thickness: 1, indent: 16, endIndent: 16),
+                            const SizedBox(height: 16),
+                            _buildCategoryHeader(
+                              icon: Icons.help_outline_rounded,
+                              title: 'Support',
+                            ),
+                            _buildSettingsTile(
+                              icon: Icons.help_center_rounded,
+                              iconBgColor: Colors.teal.withOpacity(0.1),
+                              iconColor: Colors.teal,
+                              title: 'Help & Support',
+                              subtitle: 'Get help with your account or app issues',
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const HelpSupportScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                            _buildSettingsTile(
+                              icon: Icons.info_outline_rounded,
+                              iconBgColor: Colors.blue.withOpacity(0.1),
+                              iconColor: Colors.blue,
+                              title: 'About',
+                              subtitle: 'Learn more about the StudyNotion app',
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const AboutScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            const Divider(height: 1, thickness: 1, indent: 16, endIndent: 16),
+                            const SizedBox(height: 16),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  context.read<AuthBloc>().add(LogoutUser());
+                                  context.read<CourseBloc>().add(UserLoggedOut());
+                                  Navigator.of(context).pushReplacement(
+                                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                                  );
+                                },
+                                icon: const Icon(Icons.logout_rounded),
+                                label: const Text('Logout'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red.shade50,
+                                  foregroundColor: Colors.red,
+                                  minimumSize: const Size(double.infinity, 50),
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                ),
                               ),
-                            );
-                          },
+                            ),
+                            const SizedBox(height: 40),
+                          ],
                         ),
-                        _buildSettingsTile(
-                          icon: Icons.nightlight_round,
-                          iconBgColor: Colors.indigo.withOpacity(0.1),
-                          iconColor: Colors.indigo,
-                          title: 'Appearance',
-                          subtitle: 'Dark mode and theme settings',
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const AppearanceSettingsScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        const Divider(height: 1, thickness: 1, indent: 16, endIndent: 16),
-                        const SizedBox(height: 16),
-                        _buildCategoryHeader(
-                          icon: Icons.account_circle_rounded,
-                          title: 'Account',
-                        ),
-                        _buildSettingsTile(
-                          icon: Icons.manage_accounts_rounded,
-                          iconBgColor: Colors.green.withOpacity(0.1),
-                          iconColor: Colors.green,
-                          title: 'Account Settings',
-                          subtitle: 'Manage your account details and password',
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const AccountSettingsScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        _buildSettingsTile(
-                          icon: Icons.privacy_tip_rounded,
-                          iconBgColor: Colors.purple.withOpacity(0.1),
-                          iconColor: Colors.purple,
-                          title: 'Privacy',
-                          subtitle: 'Manage your privacy settings and data',
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const PrivacySettingsScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        const Divider(height: 1, thickness: 1, indent: 16, endIndent: 16),
-                        const SizedBox(height: 16),
-                        _buildCategoryHeader(
-                          icon: Icons.help_outline_rounded,
-                          title: 'Support',
-                        ),
-                        _buildSettingsTile(
-                          icon: Icons.help_center_rounded,
-                          iconBgColor: Colors.teal.withOpacity(0.1),
-                          iconColor: Colors.teal,
-                          title: 'Help & Support',
-                          subtitle: 'Get help with your account or app issues',
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const HelpSupportScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        _buildSettingsTile(
-                          icon: Icons.info_outline_rounded,
-                          iconBgColor: Colors.blue.withOpacity(0.1),
-                          iconColor: Colors.blue,
-                          title: 'About',
-                          subtitle: 'Learn more about the StudyNotion app',
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const AboutScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        const Divider(height: 1, thickness: 1, indent: 16, endIndent: 16),
-                        const SizedBox(height: 16),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          child: ElevatedButton.icon(
+                      ),
+                    );
+                  } else {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.account_circle_rounded,
+                            size: 80,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Not logged in',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Log in to access your settings',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton.icon(
                             onPressed: () {
-                              context.read<AuthBloc>().add(LogoutUser());
-                              context.read<CourseBloc>().add(UserLoggedOut());
                               Navigator.of(context).pushReplacement(
                                 MaterialPageRoute(builder: (_) => const LoginScreen()),
                               );
                             },
-                            icon: const Icon(Icons.logout_rounded),
-                            label: const Text('Logout'),
+                            icon: const Icon(Icons.login_rounded),
+                            label: const Text('Log In'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red.shade50,
-                              foregroundColor: Colors.red,
-                              minimumSize: const Size(double.infinity, 50),
-                              elevation: 0,
+                              backgroundColor: const Color(0xFF3AAFA9),
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(200, 50),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 40),
-                      ],
-                    ),
-                  );
-                } else {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.account_circle_rounded,
-                          size: 80,
-                          color: Colors.grey.shade400,
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Not logged in',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Log in to access your settings',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.of(context).pushReplacement(
-                              MaterialPageRoute(builder: (_) => const LoginScreen()),
-                            );
-                          },
-                          icon: const Icon(Icons.login_rounded),
-                          label: const Text('Log In'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF3AAFA9),
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(200, 50),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-              },
-            ),
+                        ],
+                      ),
+                    );
+                  }
+                },
+              ),
+      ),
     );
   }
 

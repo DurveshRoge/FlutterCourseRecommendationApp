@@ -134,9 +134,16 @@ class ApiService {
   // Get dashboard data
   Future<Map<String, dynamic>> getDashboardData() async {
     try {
+      if (_currentUser == null) {
+        throw Exception('User must be logged in to access dashboard');
+      }
+
       print('Fetching dashboard data');
       final response = await _dio.get(
         '${baseUrl}/dashboard',
+        queryParameters: {
+          'email': _currentUser!.email,
+        },
         options: Options(
           headers: {'Content-Type': 'application/json'},
           validateStatus: (status) => status! < 500,
@@ -148,9 +155,9 @@ class ApiService {
 
       if (response.statusCode == 200) {
         // The response data is already in the correct format
-        return response.data;
+        return response.data['data'];
       } else {
-        throw Exception(response.data['error'] ?? 'Failed to load dashboard data');
+        throw Exception(response.data['message'] ?? 'Failed to load dashboard data');
       }
     } catch (e) {
       print('Dashboard error: $e');

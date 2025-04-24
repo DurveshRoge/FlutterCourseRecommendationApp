@@ -8,6 +8,7 @@ class User {
   final String courseType;
   final String preferredDuration;
   final String popularityImportance;
+  final bool isAdmin;
 
   User({
     required this.id,
@@ -19,6 +20,7 @@ class User {
     this.courseType = '',
     this.preferredDuration = '',
     this.popularityImportance = '',
+    this.isAdmin = false,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -36,6 +38,7 @@ class User {
       courseType: json['course_type'] ?? '',
       preferredDuration: json['preferred_duration'] ?? '',
       popularityImportance: json['popularity_importance'] ?? '',
+      isAdmin: json['is_admin'] ?? false,
     );
   }
 
@@ -49,6 +52,33 @@ class User {
       'course_type': courseType,
       'preferred_duration': preferredDuration,
       'popularity_importance': popularityImportance,
+      'is_admin': isAdmin,
     };
+  }
+
+  User copyWith({
+    String? id,
+    String? name,
+    String? email,
+    List<String>? favorites,
+    List<String>? preferredTopics,
+    String? skillLevel,
+    String? courseType,
+    String? preferredDuration,
+    String? popularityImportance,
+    bool? isAdmin,
+  }) {
+    return User(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      favorites: favorites ?? this.favorites,
+      preferredTopics: preferredTopics ?? this.preferredTopics,
+      skillLevel: skillLevel ?? this.skillLevel,
+      courseType: courseType ?? this.courseType,
+      preferredDuration: preferredDuration ?? this.preferredDuration,
+      popularityImportance: popularityImportance ?? this.popularityImportance,
+      isAdmin: isAdmin ?? this.isAdmin,
+    );
   }
 } 

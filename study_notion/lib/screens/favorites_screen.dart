@@ -52,6 +52,36 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                 color: Color(0xFF3AAFA9),
               ),
             );
+          } else if (state is CourseError) {
+            // Show error message
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline_rounded,
+                    size: 64,
+                    color: Colors.red[300],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    state.message,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.red[300],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    onPressed: () {
+                      context.read<CourseBloc>().add(LoadFavorites());
+                    },
+                    child: const Text('Try Again'),
+                  ),
+                ],
+              ),
+            );
           } else if (state is CourseLoaded && state.type == CourseType.favorites) {
             if (state.courses.isEmpty) {
               return _buildEmptyState(context);

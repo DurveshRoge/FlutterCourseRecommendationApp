@@ -65,57 +65,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ],
         ),
-        body: BlocConsumer<CourseBloc, CourseState>(
-          listener: (context, state) {
-            if (state is CourseLoading) {
-              setState(() => _isLoading = true);
-            } else {
-              setState(() => _isLoading = false);
-            }
-          },
+        body: BlocBuilder<CourseBloc, CourseState>(
           builder: (context, state) {
-            if (state is CourseLoading && !_isLoading) {
+            if (state is CourseLoading) {
               return const Center(
                 child: CircularProgressIndicator(
                   color: Color(0xFF3AAFA9),
                 ),
               );
-            }
-            
-            if (state is DashboardLoaded) {
-              final dashboardData = state.dashboardData;
-              
-              if (dashboardData.isEmpty) {
-                return _buildEmptyState();
-              }
-              
-              return RefreshIndicator(
-                onRefresh: _loadDashboard,
-                child: CustomScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    SliverPadding(
-                      padding: const EdgeInsets.all(16),
-                      sliver: SliverList(
-                        delegate: SliverChildListDelegate([
-                          _buildDashboardContent(dashboardData),
-                        ]),
+            } else if (state is CourseError) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.error_outline_rounded,
+                      size: 64,
+                      color: Colors.red[300],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      state.message,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.red[300],
                       ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: _loadDashboard,
+                      child: const Text('Try Again'),
                     ),
                   ],
                 ),
               );
+            } else if (state is DashboardLoaded) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildDashboardContent(state.dashboardData),
+                  ],
+                ),
+              );
+            } else {
+              return const Center(
+                child: Text('No dashboard data available'),
+              );
             }
-            
-            if (state is CourseError) {
-              return _buildErrorState(state.message);
-            }
-            
-            return const Center(
-              child: CircularProgressIndicator(
-                color: Color(0xFF3AAFA9),
-              ),
-            );
           },
         ),
       ),
@@ -223,8 +222,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           if (monthlyMetrics.isNotEmpty) ...[
             _buildSectionTitle('Monthly Performance'),
             _buildMonthlyPerformanceCard(
-              monthlyMetrics['profit'] as Map<String, dynamic>? ?? {},
-              monthlyMetrics['subscribers'] as Map<String, dynamic>? ?? {},
+              yearlyMetrics['monthly_profit'] as Map<String, dynamic>? ?? {},
+              yearlyMetrics['monthly_subscribers'] as Map<String, dynamic>? ?? {},
             ),
           ],
         ],

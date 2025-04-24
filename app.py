@@ -7,6 +7,7 @@ import neattext.functions as nfx
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity, linear_kernel
 from bson.json_util import dumps
+from functools import wraps
 
 # Flask and extensions
 from flask import Flask, request, render_template, jsonify, session
@@ -308,39 +309,78 @@ def hello_world():
     })
 
 
+# Add admin authentication middleware
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            # Get user email from session or request
+            email = request.args.get('email') or request.json.get('email')
+            if not email:
+                return jsonify({
+                    'success': False,
+                    'message': 'Authentication required'
+                }), 401
+
+            # Find user in database
+            user = mongo.db.users.find_one({'email': email})
+            if not user or not user.get('is_admin', False):
+                return jsonify({
+                    'success': False,
+                    'message': 'Admin access required'
+                }), 403
+
+            return f(*args, **kwargs)
+        except Exception as e:
+            print(f"Admin authentication error: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Authentication failed'
+            }), 401
+    return decorated_function
+
 @app.route('/dashboard', methods=['GET'])
-def dashboard():
+@admin_required
+def get_dashboard_data():
     try:
-        # Read and prepare data
-        df = pd.read_csv('UdemyCleanedTitle.csv')
+        # Get user email from query parameters
+        email = request.args.get('email')
+        if not email:
+            return jsonify({
+                'success': False,
+                'message': 'Email is required'
+            }), 400
+
+        # Read the data first
+        df = readdata()
+
+        # Get dashboard data
+        yearly_metrics = yearwiseprofit(df)
         
-        # Get dashboard metrics with error handling
-        valuecounts = getvaluecounts(df)
-        levelcounts = getlevelcount(df)
-        subjectsperlevel = getsubjectsperlevel(df)
-        yearwiseprofitmap, subscriberscountmap, profitmonthwise, monthwisesub = yearwiseprofit(df)
-        
-        # Format data for Flutter frontend
-        response_data = {
-            'subject_distribution': valuecounts,
-            'level_distribution': levelcounts,
-            'yearly_metrics': {
-                'profit': yearwiseprofitmap,
-                'subscribers': subscriberscountmap
-            },
-            'monthly_metrics': {
-                'profit': profitmonthwise,
-                'subscribers': monthwisesub
-            }
+        # Format yearly metrics as a map
+        formatted_yearly_metrics = {
+            'profit': yearly_metrics[0],
+            'subscribers': yearly_metrics[1],
+            'monthly_profit': yearly_metrics[2],
+            'monthly_subscribers': yearly_metrics[3]
         }
-        
-        return jsonify(response_data)
-        
-    except Exception as e:
-        print(f"Error in dashboard route: {e}")
+
+        dashboard_data = {
+            'subject_distribution': getvaluecounts(df),
+            'level_distribution': getlevelcount(df),
+            'yearly_metrics': formatted_yearly_metrics,
+            'monthly_metrics': getsubjectsperlevel(df)
+        }
+
         return jsonify({
-            'error': str(e),
-            'message': 'Failed to load dashboard data'
+            'success': True,
+            'data': dashboard_data
+        })
+    except Exception as e:
+        print(f"Error getting dashboard data: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
         }), 500
 
 
@@ -1115,6 +1155,62 @@ def search_courses():
         return jsonify({
             "success": False,
             "message": f"Failed to search courses: {str(e)}"
+        }), 500
+
+# Admin registration endpoint
+@app.route('/register-admin', methods=['POST'])
+def register_admin():
+    try:
+        data = request.get_json()
+        
+        # Check if required fields are provided
+        if not data or not data.get('email') or not data.get('password') or not data.get('name'):
+            return jsonify({
+                "success": False,
+                "message": "Missing required fields"
+            }), 400
+            
+        # Check if user already exists
+        existing_user = mongo.db.users.find_one({"email": data['email']})
+        if existing_user:
+            return jsonify({
+                "success": False,
+                "message": "User already exists"
+            }), 409
+            
+        # Hash the password
+        hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
+        
+        # Create new admin user
+        new_admin = {
+            "name": data['name'],
+            "email": data['email'],
+            "password": hashed_password,
+            "favorites": [],
+            "preferred_topics": [],
+            "skill_level": "",
+            "course_type": "",
+            "preferred_duration": "",
+            "popularity_importance": "",
+            "is_admin": True  # Set as admin
+        }
+        
+        # Insert admin into database
+        mongo.db.users.insert_one(new_admin)
+        
+        # Remove password before returning user data
+        new_admin.pop('password', None)
+        
+        return jsonify({
+            "success": True,
+            "message": "Admin registered successfully",
+            "user": json.loads(dumps(new_admin))
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
         }), 500
 
 if __name__ == '__main__':

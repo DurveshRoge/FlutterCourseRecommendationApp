@@ -103,323 +103,311 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
-    final bool isUserLoggedIn = context.watch<AuthBloc>().state is Authenticated;
-    
-    return Scaffold(
-      appBar: AppBar(
-        elevation: 0,
-        title: const Text(
-          'StudyNotion',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.5,
-          ),
-        ),
-        backgroundColor: const Color(0xFF17252A),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.dashboard_rounded),
-            tooltip: 'Dashboard',
-            onPressed: () {
-              Navigator.pushNamed(context, '/dashboard');
-            },
-          ),
-          BlocBuilder<AuthBloc, AuthState>(
-            builder: (context, state) {
-              if (state is Authenticated) {
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.account_circle_rounded),
-                      offset: const Offset(0, 50),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      onSelected: (value) {
-                        if (value == 'logout') {
-                          context.read<AuthBloc>().add(LogoutUser());
-                          context.read<CourseBloc>().add(UserLoggedOut());
-                          Navigator.of(context).pushReplacement(
-                            MaterialPageRoute(builder: (_) => const LoginScreen()),
-                          );
-                        } else if (value == 'profile') {
-                          Navigator.of(context).pushNamed('/profile');
-                        } else if (value == 'settings') {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const SettingsScreen(),
-                            ),
-                          );
-                        }
-                      },
-                      itemBuilder: (BuildContext context) {
-                        return [
-                          PopupMenuItem<String>(
-                            value: 'profile',
-                            child: Row(
-                              children: [
-                                const Icon(Icons.person_rounded, color: Color(0xFF3AAFA9)),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    'Hi, ${state.user.name}',
-                                    style: const TextStyle(fontWeight: FontWeight.w500),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const PopupMenuItem<String>(
-                            value: 'settings',
-                            child: Row(
-                              children: [
-                                Icon(Icons.settings_rounded, color: Color(0xFF3AAFA9)),
-                                SizedBox(width: 12),
-                                Text('Settings', style: TextStyle(fontWeight: FontWeight.w500)),
-                              ],
-                            ),
-                          ),
-                          const PopupMenuDivider(),
-                          const PopupMenuItem<String>(
-                            value: 'logout',
-                            child: Row(
-                              children: [
-                                Icon(Icons.logout_rounded, color: Color(0xFF3AAFA9)),
-                                SizedBox(width: 12),
-                                Text('Logout', style: TextStyle(fontWeight: FontWeight.w500)),
-                              ],
-                            ),
-                          ),
-                        ];
-                      },
-                    ),
-                  ],
-                );
-              } else {
-                return IconButton(
-                  icon: const Icon(Icons.login_rounded),
-                  tooltip: 'Login',
-                  onPressed: () {
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    );
-                  },
-                );
-              }
-            },
-          ),
-          const SizedBox(width: 8),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          indicatorWeight: 3,
-          labelStyle: const TextStyle(
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.5,
-          ),
-          unselectedLabelStyle: const TextStyle(
-            fontWeight: FontWeight.normal,
-          ),
-          tabs: [
-            const Tab(text: 'Discover'),
-            const Tab(text: 'Personal'),
-            const Tab(text: 'Favorites'),
-          ],
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          // Discover Tab - Show all courses
-          BlocBuilder<CourseBloc, CourseState>(
-            buildWhen: (previous, current) {
-              // Only rebuild for specific states related to trending courses or search
-              return current is TrendingCoursesLoading || 
-                     current is TrendingCoursesLoaded ||
-                     current is TrendingCoursesError ||
-                     (current is CourseLoaded && 
-                      (current.type == CourseType.trending || 
-                       current.type == CourseType.search)) ||
-                     current is CourseLoading ||
-                     current is CourseError;
-            },
-            builder: (context, state) {
-              // Check for loading state
-              if (state is CourseLoading || state is TrendingCoursesLoading) {
-                return const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF3AAFA9)),
-                      ),
-                      SizedBox(height: 16),
-                      Text('Searching courses...'),
-                    ],
-                  ),
-                );
-              }
-
-              return Column(
-                children: [
-                  // Search Bar
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: TextField(
-                      decoration: InputDecoration(
-                        hintText: 'Search courses...',
-                        prefixIcon: const Icon(Icons.search, color: Color(0xFF3AAFA9)),
-                        suffixIcon: IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            // Clear search and reset to trending courses
-                            context.read<CourseBloc>().add(LoadTrendingCourses());
-                          },
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      ),
-                      onSubmitted: (query) {
-                        if (query.isNotEmpty) {
-                          context.read<CourseBloc>().add(SearchCourses(query));
-                        } else {
-                          // If search is empty, show trending courses
-                          context.read<CourseBloc>().add(LoadTrendingCourses());
-                        }
-                      },
-                    ),
-                  ),
-                  // Course Grid or Placeholder
-                  Expanded(
-                    child: _buildDiscoverContent(state),
-                  ),
-                ],
-              );
-            },
-          ),
-          
-          // Personal Tab - Navigate to Recommendations Screen
-          Builder(
-            builder: (context) => Center(
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const RecommendationsScreen(),
-                    ),
-                  );
-                },
-                child: const Text('View Personalized Recommendations'),
+    return BlocBuilder<AuthBloc, AuthState>(
+      builder: (context, state) {
+        if (state is Authenticated) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text(
+                'StudyNotion',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
               ),
-            ),
-          ),
-          
-          // Favorites Tab
-          BlocBuilder<CourseBloc, CourseState>(
-            builder: (context, state) {
-              if (state is CourseLoading) {
-                return const Center(
-                  child: CircularProgressIndicator(
-                    color: Color(0xFF3AAFA9),
+              backgroundColor: const Color(0xFF17252A),
+              actions: [
+                // Only show dashboard for admin users
+                if (state.user.isAdmin)
+                  IconButton(
+                    icon: const Icon(Icons.dashboard_rounded),
+                    tooltip: 'Dashboard',
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/dashboard');
+                    },
                   ),
-                );
-              } else if (state is CourseLoaded && state.type == CourseType.favorites) {
-                if (state.courses.isEmpty) {
-                  return _buildEmptyFavoritesState();
-                }
-                return Column(
-                  children: [
-                    // Header banner
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF17252A),
-                        borderRadius: BorderRadius.only(
-                          bottomLeft: Radius.circular(24),
-                          bottomRight: Radius.circular(24),
-                        ),
-                      ),
-                      child: Row(
+                BlocBuilder<AuthBloc, AuthState>(
+                  builder: (context, state) {
+                    if (state is Authenticated) {
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.2),
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.account_circle_rounded),
+                            offset: const Offset(0, 50),
+                            shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: const Icon(
-                              Icons.favorite_rounded,
-                              color: Colors.red,
-                              size: 24,
-                            ),
+                            onSelected: (value) {
+                              if (value == 'logout') {
+                                context.read<AuthBloc>().add(LogoutUser());
+                                context.read<CourseBloc>().add(UserLoggedOut());
+                                Navigator.of(context).pushReplacement(
+                                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                                );
+                              } else if (value == 'profile') {
+                                Navigator.of(context).pushNamed('/profile');
+                              } else if (value == 'settings') {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const SettingsScreen(),
+                                  ),
+                                );
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: 'profile',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.person_outline_rounded),
+                                    SizedBox(width: 8),
+                                    Text('Profile'),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'settings',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.settings_outlined),
+                                    SizedBox(width: 8),
+                                    Text('Settings'),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuDivider(),
+                              const PopupMenuItem(
+                                value: 'logout',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.logout_rounded),
+                                    SizedBox(width: 8),
+                                    Text('Logout'),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+              ],
+              bottom: TabBar(
+                controller: _tabController,
+                indicatorColor: Colors.white,
+                indicatorWeight: 3,
+                labelStyle: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+                unselectedLabelStyle: const TextStyle(
+                  fontWeight: FontWeight.normal,
+                ),
+                tabs: [
+                  const Tab(text: 'Discover'),
+                  const Tab(text: 'Personal'),
+                  const Tab(text: 'Favorites'),
+                ],
+              ),
+            ),
+            body: TabBarView(
+              controller: _tabController,
+              children: [
+                // Discover Tab - Show all courses
+                BlocBuilder<CourseBloc, CourseState>(
+                  buildWhen: (previous, current) {
+                    // Only rebuild for specific states related to trending courses or search
+                    return current is TrendingCoursesLoading || 
+                           current is TrendingCoursesLoaded ||
+                           current is TrendingCoursesError ||
+                           (current is CourseLoaded && 
+                            (current.type == CourseType.trending || 
+                             current.type == CourseType.search)) ||
+                           current is CourseLoading ||
+                           current is CourseError;
+                  },
+                  builder: (context, state) {
+                    // Check for loading state
+                    if (state is CourseLoading || state is TrendingCoursesLoading) {
+                      return const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF3AAFA9)),
+                            ),
+                            SizedBox(height: 16),
+                            Text('Searching courses...'),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return Column(
+                      children: [
+                        // Search Bar
+                        Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: TextField(
+                            decoration: InputDecoration(
+                              hintText: 'Search courses...',
+                              prefixIcon: const Icon(Icons.search, color: Color(0xFF3AAFA9)),
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  // Clear search and reset to trending courses
+                                  context.read<CourseBloc>().add(LoadTrendingCourses());
+                                },
+                              ),
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            ),
+                            onSubmitted: (query) {
+                              if (query.isNotEmpty) {
+                                context.read<CourseBloc>().add(SearchCourses(query));
+                              } else {
+                                // If search is empty, show trending courses
+                                context.read<CourseBloc>().add(LoadTrendingCourses());
+                              }
+                            },
+                          ),
+                        ),
+                        // Course Grid or Placeholder
+                        Expanded(
+                          child: _buildDiscoverContent(state),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                
+                // Personal Tab - Navigate to Recommendations Screen
+                Builder(
+                  builder: (context) => Center(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const RecommendationsScreen(),
+                          ),
+                        );
+                      },
+                      child: const Text('View Personalized Recommendations'),
+                    ),
+                  ),
+                ),
+                
+                // Favorites Tab
+                BlocBuilder<CourseBloc, CourseState>(
+                  builder: (context, state) {
+                    if (state is CourseLoading) {
+                      return const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF3AAFA9),
+                        ),
+                      );
+                    } else if (state is CourseLoaded && state.type == CourseType.favorites) {
+                      if (state.courses.isEmpty) {
+                        return _buildEmptyFavoritesState();
+                      }
+                      return Column(
+                        children: [
+                          // Header banner
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF17252A),
+                              borderRadius: BorderRadius.only(
+                                bottomLeft: Radius.circular(24),
+                                bottomRight: Radius.circular(24),
+                              ),
+                            ),
+                            child: Row(
                               children: [
-                                Text(
-                                  '${state.courses.length} Favorite Courses',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    Icons.favorite_rounded,
+                                    color: Colors.red,
+                                    size: 24,
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                const Text(
-                                  'Your saved courses for easy access',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.white70,
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${state.courses.length} Favorite Courses',
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      const Text(
+                                        'Your saved courses for easy access',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white70,
+                                        ),
+                                      ),
+                                    ],
                                   ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                                  onPressed: () {
+                                    context.read<CourseBloc>().add(LoadFavorites());
+                                  },
                                 ),
                               ],
                             ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-                            onPressed: () {
-                              context.read<CourseBloc>().add(LoadFavorites());
-                            },
+                          Expanded(
+                            child: _buildCourseList(state.courses),
                           ),
                         ],
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildCourseList(state.courses),
-                    ),
-                  ],
-                );
-              } else {
-                // Check if user is logged in, if not show login prompt
-                final authState = context.watch<AuthBloc>().state;
-                if (authState is! Authenticated) {
-                  return _buildLoginPrompt();
-                }
-                
-                // Just show loading indicator without triggering another load
-                return const Center(
-                  child: CircularProgressIndicator(
-                    color: Color(0xFF3AAFA9),
-                  ),
-                );
-              }
-            },
-          ),
-        ],
-      ),
+                      );
+                    } else {
+                      // Check if user is logged in, if not show login prompt
+                      final authState = context.watch<AuthBloc>().state;
+                      if (authState is! Authenticated) {
+                        return _buildLoginPrompt();
+                      }
+                      
+                      // Just show loading indicator without triggering another load
+                      return const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF3AAFA9),
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ],
+            ),
+          );
+        }
+        return const SizedBox.shrink();
+      },
     );
   }
   
